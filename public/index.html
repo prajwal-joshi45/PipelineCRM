@@ -1,0 +1,2794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Pipeline — Sales Tracker CRM</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#08111F;
+  --ink-soft:#152648;
+  --paper:#0C1830;
+  --card:#132548;
+  --slate:#E8EDF7;
+  --slate-soft:#8FA0C4;
+  --line:#28395F;
+  --petrol:#1DBEB0;
+  --petrol-dark:#159D91;
+  --amber:#E8B33D;
+  --leak:#FF6E79;
+  --leak-bg:#3A1620;
+  --good:#3ED892;
+  --good-bg:#0F3324;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.35);
+  --radius: 10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--slate);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;}
+h1,h2,h3,h4{font-family:'Space Grotesk','Inter',sans-serif; margin:0; letter-spacing:-0.01em;}
+::selection{background:var(--petrol); color:#fff;}
+a{color:inherit;}
+button{font-family:inherit; cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+
+/* ===== App chrome ===== */
+#app{min-height:100vh; display:flex; flex-direction:column;}
+.topbar{
+  background:var(--ink); color:#fff; padding:12px 18px;
+  display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  position:sticky; top:0; z-index:40;
+  box-shadow:0 2px 10px rgba(0,0,0,.15);
+}
+.brand{display:flex; align-items:center; gap:10px; margin-right:8px;}
+.brand-mark{
+  width:26px; height:26px; border-radius:6px;
+  background:linear-gradient(135deg, var(--petrol), #14A3A1);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px; color:#fff;
+  flex-shrink:0;
+}
+.brand h1{font-size:16px; color:#fff; font-weight:600;}
+.brand span{color:#9FB0CE; font-size:11px; display:block; margin-top:-1px; letter-spacing:.03em; text-transform:uppercase;}
+.tabs{display:flex; gap:4px; flex:1; flex-wrap:wrap;}
+.tab-btn{
+  background:transparent; border:none; color:#B7C3DA; padding:8px 14px;
+  border-radius:7px; font-size:13.5px; font-weight:600; transition:.15s;
+}
+.tab-btn:hover{background:var(--ink-soft); color:#fff;}
+.tab-btn.active{background:var(--petrol); color:#fff;}
+.topbar-actions{display:flex; gap:8px; align-items:center;}
+.btn{
+  border:1px solid transparent; border-radius:7px; padding:8px 13px; font-size:13px; font-weight:600;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap; transition:.12s;
+}
+.btn-primary{background:var(--petrol); color:#fff;}
+.btn-primary:hover{background:var(--petrol-dark);}
+.btn-ghost{background:rgba(255,255,255,.08); color:#fff; border-color:rgba(255,255,255,.15);}
+.btn-ghost:hover{background:rgba(255,255,255,.16);}
+.btn-light{background:var(--card); color:var(--slate); border-color:var(--line);}
+.btn-light:hover{border-color:var(--petrol); color:var(--petrol);}
+.btn-danger{background:var(--leak); color:#fff;}
+.btn-sm{padding:5px 10px; font-size:12px;}
+
+main{flex:1; padding:18px; max-width:1500px; margin:0 auto; width:100%;}
+.view{display:none;}
+.view.active{display:block; animation:fade .18s ease;}
+@keyframes fade{from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:none;}}
+
+/* ===== leak indicator (signature element) ===== */
+.leak-dot{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; border-radius:50%; background:var(--leak); color:#fff;
+  font-size:10px; font-weight:800; flex-shrink:0;
+}
+.leak-strip{border-left:4px solid var(--leak) !important;}
+.leak-text{color:var(--leak); font-weight:700;}
+.leak-tag{
+  background:var(--leak-bg); color:var(--leak); font-size:10.5px; font-weight:700;
+  padding:2px 7px; border-radius:20px; display:inline-flex; align-items:center; gap:4px;
+  white-space:nowrap;
+}
+
+/* ===== Kanban ===== */
+.kanban-toolbar{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
+.board{display:flex; gap:12px; overflow-x:auto; padding-bottom:14px; -webkit-overflow-scrolling:touch;}
+.column{
+  background:var(--ink-soft); border-radius:12px; min-width:270px; max-width:270px; flex-shrink:0;
+  display:flex; flex-direction:column; max-height:calc(100vh - 160px);
+}
+.column-head{
+  padding:11px 12px 9px; display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; border-radius:12px 12px 0 0;
+}
+.column-head h3{font-size:12.5px; text-transform:uppercase; letter-spacing:.04em;}
+.col-count{
+  background:rgba(0,0,0,.08); border-radius:20px; padding:1px 8px; font-size:11px; font-weight:700;
+}
+.column-body{padding:0 8px 8px; overflow-y:auto; flex:1;}
+.column.drag-over{outline:2px dashed var(--petrol); outline-offset:-4px;}
+
+.card{
+  background:var(--card); border-radius:10px; padding:10px 11px; margin-bottom:8px;
+  box-shadow:var(--shadow); border-left:4px solid transparent; cursor:grab;
+}
+.card:active{cursor:grabbing;}
+.card-top{display:flex; justify-content:space-between; align-items:flex-start; gap:6px;}
+.card-name{font-weight:700; font-size:13.5px; line-height:1.25;}
+.card-co{color:var(--slate-soft); font-size:11.5px; margin-top:1px;}
+.card-flags{display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;}
+.card-meta{margin-top:7px; font-size:11px; color:var(--slate-soft); display:flex; flex-direction:column; gap:2px;}
+.card-meta b{color:var(--slate); font-weight:600;}
+.card-money{margin-top:7px; font-size:12px; font-weight:700; color:var(--petrol-dark);}
+.card-footer{display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px;}
+.card-move{font-size:10.5px; border:1px solid var(--line); border-radius:6px; padding:3px 4px; background:var(--ink-soft); color:var(--slate); max-width:112px;}
+.card-badge{font-size:10px; font-weight:700; padding:2px 6px; border-radius:20px; background:var(--ink-soft); color:var(--slate-soft);}
+
+/* ===== Lead Log ===== */
+.filters-bar{
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--card);
+  padding:12px; border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:14px;
+}
+.filters-bar label{font-size:11px; color:var(--slate-soft); font-weight:700; text-transform:uppercase; letter-spacing:.03em; display:block; margin-bottom:3px;}
+.filters-bar .fgroup{display:flex; flex-direction:column;}
+.cat-filter-wrap{position:relative;}
+.cat-filter-pop{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); padding:10px; min-width:200px;
+}
+.cat-filter-pop.open{display:block;}
+.cat-filter-pop label{
+  display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:500;
+  text-transform:none; letter-spacing:0; color:var(--slate); padding:4px 2px; cursor:pointer;
+}
+.cat-filter-pop .cat-actions{display:flex; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--line);}
+select, input[type=text], input[type=number], input[type=date], input[type=datetime-local], input[type=email], input[type=tel], textarea{
+  border:1px solid var(--line); border-radius:7px; padding:7px 9px; font-size:13px; background:var(--ink-soft); color:var(--slate);
+}
+select:focus, input:focus, textarea:focus{outline:2px solid var(--petrol); outline-offset:0; border-color:var(--petrol);}
+input::placeholder, textarea::placeholder{color:var(--slate-soft); opacity:.8;}
+select option{background:var(--card); color:var(--slate);}
+
+.table-wrap{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:auto;}
+table{border-collapse:collapse; width:100%; font-size:12.5px; min-width:1400px;}
+th{
+  text-align:left; padding:9px 10px; background:var(--ink-soft); border-bottom:1px solid var(--line);
+  font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--slate-soft);
+  position:sticky; top:0; cursor:pointer; white-space:nowrap; user-select:none;
+}
+th:hover{color:var(--petrol);}
+td{padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap;}
+tr:hover td{background:rgba(255,255,255,.03);}
+.status-pill{padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+
+/* ===== Dashboard ===== */
+.stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:16px;}
+.stat-tile{background:var(--card); border-radius:var(--radius); padding:13px 14px; box-shadow:var(--shadow); position:relative;}
+.stat-tile .label{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate-soft); font-weight:700;}
+.stat-tile .value{font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; margin-top:4px;}
+.stat-tile .sub{font-size:11px; color:var(--slate-soft); margin-top:2px;}
+.section-title{display:flex; align-items:center; justify-content:space-between; margin:22px 0 10px;}
+.section-title h2{font-size:15px;}
+.panel{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:16px;}
+.rep-table{width:100%; border-collapse:collapse; font-size:12px;}
+.rep-table th{padding:7px 8px; text-align:left; border-bottom:1px solid var(--line); color:var(--slate-soft); font-size:10px; text-transform:uppercase;}
+.rep-table td{padding:7px 8px; border-bottom:1px solid var(--line);}
+.charts-row{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+.bar{height:8px; border-radius:20px; background:var(--ink-soft); overflow:hidden; margin-top:8px;}
+.bar > div{height:100%; background:var(--petrol);}
+
+/* ===== Projection ===== */
+.proj-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+.proj-card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; border-top:4px solid var(--line);}
+.proj-card.worst{border-top-color:var(--leak);}
+.proj-card.expected{border-top-color:var(--petrol);}
+.proj-card.best{border-top-color:var(--good);}
+.proj-card h3{font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate-soft);}
+.proj-card .big{font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:700; margin:8px 0 2px;}
+.proj-row{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px dashed var(--line);}
+.assump-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-top:10px;}
+.assump-grid .fgroup{display:flex; flex-direction:column; gap:4px;}
+.assump-grid label{font-size:11px; color:var(--slate-soft); font-weight:700;}
+
+/* ===== Modal ===== */
+.modal-bg{
+  position:fixed; inset:0; background:rgba(18,32,59,.5); display:none; align-items:flex-start; justify-content:center;
+  z-index:100; padding:24px 12px; overflow-y:auto;
+}
+.modal-bg.open{display:flex;}
+/* Fully opaque, not the translucent .5 used by other modals — this one sits
+   in front of the whole app before login / after logout, so nothing behind
+   it (rendered leads, names, money figures) should be visible or peekable. */
+#loginBg{background:var(--paper);}
+#dupCompanyBg{ z-index:150; }
+.modal{
+  background:var(--card); border-radius:14px; width:100%; max-width:760px; box-shadow:0 20px 60px rgba(0,0,0,.5); border:1px solid var(--line);
+  animation:pop .15s ease;
+}
+@keyframes pop{from{transform:translateY(8px); opacity:0;} to{transform:none; opacity:1;}}
+.modal-head{display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--line);}
+.modal-head h2{font-size:16px;}
+.modal-close{background:none; border:none; font-size:20px; color:var(--slate-soft); line-height:1;}
+.modal-body{padding:18px 20px; max-height:70vh; overflow-y:auto;}
+.form-section{margin-bottom:18px;}
+.form-section h4{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--petrol-dark); margin-bottom:8px; border-bottom:1px solid var(--line); padding-bottom:6px;}
+.form-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.form-grid .full{grid-column:1/-1;}
+.form-grid .fgroup{display:flex; flex-direction:column; gap:4px;}
+.form-grid label{font-size:11.5px; font-weight:600; color:var(--slate-soft);}
+.modal-foot{padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:8px;}
+.calc-box{background:rgba(29,190,176,.08); border:1px solid rgba(29,190,176,.3); border-radius:8px; padding:10px 12px; font-size:13px; display:flex; justify-content:space-between; align-items:center;}
+.calc-box b{font-family:'Space Grotesk',sans-serif; font-size:16px; color:var(--petrol-dark);}
+.err-msg{color:var(--leak); font-size:12px; font-weight:600; margin-top:8px; display:none;}
+
+.empty{text-align:center; padding:60px 20px; color:var(--slate-soft);}
+.empty h3{color:var(--slate); margin-bottom:6px;}
+.toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
+  padding:10px 18px; border-radius:8px; font-size:13px; z-index:200; box-shadow:var(--shadow); opacity:0; pointer-events:none; transition:.2s;
+}
+.toast.show{opacity:1; transform:translate(-50%,-6px);}
+
+/* ===== Quotation ===== */
+.quote-toolbar{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
+.quote-cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px;}
+.quote-card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; border-left:4px solid var(--petrol); cursor:pointer;}
+.quote-card:hover{border-left-color:var(--amber);}
+.quote-card h4{font-size:14.5px; margin-bottom:2px;}
+.quote-card .qmeta{font-size:11.5px; color:var(--slate-soft); margin-top:2px;}
+.quote-card .qtotal{font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:700; color:var(--petrol-dark); margin-top:8px;}
+.qrow{display:grid; grid-template-columns:22px 1.4fr 1fr 70px 70px 90px 70px; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line);}
+.qrow input[type=text], .qrow input[type=number]{width:100%;}
+.qrow-head{display:grid; grid-template-columns:22px 1.4fr 1fr 70px 70px 90px 70px; gap:8px; font-size:10px; text-transform:uppercase; letter-spacing:.03em; color:var(--slate-soft); padding-bottom:4px;}
+.qscanrow{display:grid; grid-template-columns:22px 1.6fr 110px 90px; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line);}
+.qmodrow{display:flex; gap:8px; align-items:flex-start; padding:7px 0; border-bottom:1px solid var(--line);}
+.qmodrow input[type=checkbox]{margin-top:9px;}
+.qmodrow .fgroup{flex:1;}
+.qsection h4{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--petrol-dark); margin:0 0 8px; border-bottom:1px solid var(--line); padding-bottom:6px;}
+.pkg-radio{display:flex; align-items:center; justify-content:center;}
+.quote-total-box{background:rgba(29,190,176,.08); border:1px solid rgba(29,190,176,.3); border-radius:8px; padding:12px 14px; margin-top:6px;}
+.quote-total-box .qt-row{display:flex; justify-content:space-between; font-size:12.5px; padding:3px 0;}
+.quote-total-box .qt-grand{font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; color:var(--petrol-dark); border-top:1px solid rgba(29,190,176,.3); margin-top:6px; padding-top:8px; display:flex; justify-content:space-between;}
+.company-pick-wrap{position:relative;}
+.log-detail{background:var(--bg2,rgba(255,255,255,.04)); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:12px;}
+.log-detail-meta{font-weight:600; color:var(--petrol-dark); margin-bottom:4px;}
+.log-detail-changes{font-size:11.5px; color:var(--slate-soft); margin-bottom:4px;}
+.log-detail-remarks{font-size:12.5px; line-height:1.5;}
+.log-detail-remarks.empty{color:var(--slate-soft); font-style:italic;}
+.card-logbadge{font-size:10.5px; color:var(--slate-soft); display:inline-flex; align-items:center; gap:3px; margin-top:4px;}
+.card-remarks{font-size:11px; color:var(--slate-soft); margin-top:6px; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+/* Printable quotation document — built once as HTML and dropped into this
+   off-screen container, then shown (and everything else hidden) only for
+   @media print, so window.print() / "Save as PDF" produces a clean page
+   without the app chrome. */
+#quotePrintArea{ display:none; }
+.qdoc{ max-width:800px; margin:0 auto; color:#1a1a1a; background:#fff; font-family:'Century Gothic','Trebuchet MS','Segoe UI',Arial,sans-serif; }
+.qdoc .qdoc-topline{ font-size:9.5px; color:#052F61; letter-spacing:.08em; text-align:right; margin-bottom:10px; }
+/* ---- Cover page ---- */
+.qdoc .cover{ min-height:9.2in; display:flex; flex-direction:column; page-break-after:always; }
+.qdoc .cover img{ width:80px; height:auto; margin-bottom:14px; }
+.qdoc .cover .brand-line{ font-style:italic; font-weight:700; font-size:15px; color:#1a1a1a; margin-bottom:60px; }
+.qdoc .cover .cover-mid{ margin-top:120px; text-align:left; }
+.qdoc .cover .cover-mid h1{ background:none; padding:0; text-transform:none; font-size:15px; font-weight:700; letter-spacing:.02em; margin:0 0 4px; color:#1a1a1a; }
+.qdoc .cover .cover-mid h2{ background:none; padding:0; font-size:26px; font-weight:700; margin:0 0 30px; color:#1a1a1a; text-transform:uppercase; letter-spacing:normal; }
+.qdoc .cover .cover-meta{ font-size:12.5px; font-weight:700; margin-top:220px; }
+/* ---- Banded headings, matching the source doc's Heading1/Heading2 styles ---- */
+.qdoc h1{ background:#052F61; color:#fff; font-size:13px; text-transform:uppercase; letter-spacing:.05em; padding:7px 10px; margin:22px 0 10px; }
+.qdoc h2{ background:#B1D2FB; color:#0C1830; font-size:12px; text-transform:uppercase; letter-spacing:.04em; padding:6px 10px; margin:16px 0 8px; }
+.qdoc h3{ font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#021730; border-top:1.5px solid #052F61; padding-top:5px; margin:14px 0 6px; }
+.qdoc table{ width:100%; border-collapse:collapse; margin:6px 0 14px; font-size:12px; }
+.qdoc th,.qdoc td{ border:1px solid #9AAFC7; padding:6px 9px; text-align:left; vertical-align:top; }
+.qdoc th{ background:#EAF1FB; font-weight:700; width:32%; }
+.qdoc ol,.qdoc ul{ margin:6px 0 10px 22px; font-size:12.5px; line-height:1.55; }
+.qdoc ul.qdoc-dash{ list-style:none; margin-left:6px; }
+.qdoc ul.qdoc-dash li:before{ content:"- "; }
+.qdoc p{ font-size:12.5px; line-height:1.55; margin:8px 0; }
+.qdoc blockquote{ margin:8px 0 8px 18px; padding-left:10px; border-left:2px solid #B1D2FB; font-size:12.5px; line-height:1.55; color:#333; }
+.qdoc .qdoc-italic{ font-style:italic; }
+.qdoc .qdoc-foot{ font-size:10.5px; color:#052F61; margin-top:26px; border-top:1px solid #B1D2FB; padding-top:8px; display:flex; justify-content:space-between; letter-spacing:.04em; }
+.qdoc .qdoc-rec{ font-weight:700; }
+
+@media print{
+  body *{ visibility:hidden; }
+  #quotePrintArea, #quotePrintArea *{ visibility:visible; }
+  #quotePrintArea{ display:block; position:absolute; top:0; left:0; width:100%; }
+}
+
+@media (max-width:720px){
+  .form-grid{grid-template-columns:1fr;}
+  .charts-row{grid-template-columns:1fr;}
+  .proj-grid{grid-template-columns:1fr;}
+  .brand span{display:none;}
+  .topbar{padding:10px 12px;}
+  table{min-width:1100px;}
+}
+
+/* ===== Mobile device compatibility ===== */
+@media (max-width:640px){
+  .topbar{ flex-direction:column; align-items:stretch; gap:10px; }
+  .brand{ justify-content:space-between; }
+  .brand span{ display:block; }
+  .tabs{ justify-content:flex-start; overflow-x:auto; -webkit-overflow-scrolling:touch; flex-wrap:nowrap; padding-bottom:2px; }
+  .tab-btn{ flex-shrink:0; }
+  .topbar-actions{ justify-content:flex-start; overflow-x:auto; -webkit-overflow-scrolling:touch; flex-wrap:nowrap; padding-bottom:2px; }
+  .topbar-actions .btn{ flex-shrink:0; }
+  main{ padding:10px; }
+  .modal-bg{ padding:0; align-items:stretch; }
+  .modal{ max-width:100%; width:100%; min-height:100%; border-radius:0; }
+  .modal-body{ max-height:calc(100dvh - 118px); }
+  .column{ min-width:82vw; max-width:82vw; }
+  .proj-card{ padding:12px; }
+  .stat-grid{ grid-template-columns:repeat(2,1fr); }
+  .qrow{ grid-template-columns:1fr; gap:4px; padding:10px 0; }
+  .qrow-head{ display:none; }
+  .qscanrow{ grid-template-columns:1fr; gap:4px; padding:10px 0; }
+  .quote-toolbar{ flex-direction:column; align-items:stretch; }
+  select, input[type=text], input[type=number], input[type=date], input[type=datetime-local], input[type=email], input[type=tel], textarea{
+    font-size:16px; /* prevents iOS auto-zoom on focus */
+  }
+  .btn{ padding:9px 13px; }
+}
+
+
+/* ===== new: search / view toggle ===== */
+.kanban-toolbar{display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
+#kanbanSearch{width:280px; max-width:100%;}
+.view-toggle{display:flex; background:var(--ink-soft); border-radius:8px; padding:3px; gap:2px;}
+.vt-btn{background:transparent; border:none; color:var(--slate-soft); padding:6px 12px; border-radius:6px; font-size:12.5px; font-weight:600;}
+.vt-btn.active{background:var(--petrol); color:#fff;}
+.list-row{
+  background:var(--card); border-radius:9px; padding:10px 13px; margin-bottom:7px; display:flex;
+  align-items:center; gap:12px; box-shadow:var(--shadow); border-left:4px solid transparent; flex-wrap:wrap;
+}
+.list-row .lname{font-weight:700; font-size:13.5px; min-width:150px;}
+.list-row .lmeta{font-size:11.5px; color:var(--slate-soft);}
+.cal-group{margin-bottom:16px;}
+.cal-group h4{font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--petrol); margin-bottom:8px;}
+
+/* ===== new: access badges ===== */
+.role-badge{font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.03em;}
+.role-admin{background:rgba(232,179,61,.18); color:var(--amber);}
+.role-setter{background:rgba(29,190,176,.18); color:var(--petrol);}
+.role-closer{background:rgba(140,155,240,.18); color:#8C9BF0;}
+.role-viewer{background:var(--ink-soft); color:var(--slate-soft);}
+.perm-locked{opacity:.4; cursor:not-allowed !important; pointer-events:none;}
+.user-pick{
+  display:flex; align-items:center; justify-content:space-between; background:var(--ink-soft);
+  border-radius:8px; padding:10px 12px; margin-bottom:8px; cursor:pointer; border:1px solid transparent;
+}
+.user-pick:hover{border-color:var(--petrol);}
+.perm-row{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; flex-wrap:wrap; gap:6px;}
+.perm-check{display:flex; align-items:center; gap:5px; font-size:12px; color:var(--slate-soft);}
+.drive-panel{background:rgba(29,190,176,.06); border:1px solid rgba(29,190,176,.25); border-radius:10px; padding:14px 16px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">P</div>
+      <div><h1>Pipeline</h1><span>Sales Tracker CRM</span></div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-view="kanban">Kanban</button>
+      <button class="tab-btn" data-view="log">Lead Log</button>
+      <button class="tab-btn" data-view="dash">Dashboard</button>
+      <button class="tab-btn" data-view="proj">Projection</button>
+      <button class="tab-btn" data-view="quote">Quotation</button>
+      <button class="tab-btn" data-view="admin" id="adminTabBtn" style="display:none;">Admin</button>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm" id="tutorialBtn">? Tutorial</button>
+      <button class="btn btn-ghost btn-sm" id="exportXlsxBtn">⬇ Export XLSX</button>
+      <button class="btn btn-ghost btn-sm" id="shareXlsxBtn" title="Share the leads file directly with a teammate">📤 Share</button>
+      <button class="btn btn-ghost btn-sm" id="importXlsxBtn">⬆ Import XLSX</button>
+      <input type="file" id="importXlsxFile" accept=".xlsx,.xls" style="display:none;">
+      <button class="btn btn-ghost btn-sm" id="logActivityBtn">+ Daily Activity</button>
+      <button class="btn btn-light" id="quickAddBtn" title="Add a lead with just the essentials">⚡ Quick Add</button>
+      <button class="btn btn-primary" id="newLeadBtn">+ New Lead</button>
+      <button class="btn btn-ghost btn-sm" id="userBadgeBtn">👤 —</button>
+    </div>
+  </div>
+
+  <main>
+    <!-- KANBAN -->
+    <div class="view active" id="view-kanban">
+      <div class="kanban-toolbar">
+        <div class="fgroup" style="min-width:220px;">
+          <input type="text" id="kanbanSearch" placeholder="🔍 Search leads (name, company, email, phone)">
+        </div>
+        <div class="view-toggle" id="kanbanViewToggle">
+          <button class="vt-btn active" data-kview="board">Board</button>
+          <button class="vt-btn" data-kview="list">List</button>
+          <button class="vt-btn" data-kview="calendar">Calendar</button>
+        </div>
+        <div style="font-size:12px;color:var(--slate-soft); flex-basis:100%;">Drag a card between columns on Board view, or use the status dropdown on mobile. Red = a leak worth checking.</div>
+      </div>
+      <div class="board" id="board"></div>
+      <div class="kanban-alt" id="kanbanAlt" style="display:none;"></div>
+    </div>
+
+    <!-- LEAD LOG -->
+    <div class="view" id="view-log">
+      <div class="filters-bar" id="logFilters"></div>
+      <div class="table-wrap"><table id="logTable"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="view" id="view-dash">
+      <div class="filters-bar" id="dashFilters"></div>
+      <div id="dashContent"></div>
+    </div>
+
+    <!-- PROJECTION -->
+    <div class="view" id="view-proj">
+      <div id="projContent"></div>
+    </div>
+
+    <!-- QUOTATION -->
+    <div class="view" id="view-quote">
+      <div id="quoteContent"></div>
+    </div>
+
+    <!-- ADMIN -->
+    <div class="view" id="view-admin">
+      <div id="adminContent"></div>
+    </div>
+  </main>
+</div>
+
+<!-- LOGIN OVERLAY -->
+<div class="modal-bg open" id="loginBg" style="z-index:300;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head"><h2>Who's working today?</h2></div>
+    <div class="modal-body" id="loginBody"></div>
+  </div>
+</div>
+
+<!-- TUTORIAL MODAL -->
+<div class="modal-bg" id="tutorialBg">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head"><h2>How Pipeline works</h2><button class="modal-close" id="tutorialClose">&times;</button></div>
+    <div class="modal-body" id="tutorialBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-light btn-sm" id="tutorialPrev">Back</button>
+      <div id="tutorialDots" style="display:flex; gap:5px; align-items:center;"></div>
+      <button class="btn btn-primary btn-sm" id="tutorialNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="leadModalBg">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="leadModalTitle">New Lead</h2>
+      <button class="modal-close" id="leadModalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="leadModalBody"></div>
+    <div class="modal-foot">
+      <div>
+        <button class="btn btn-danger btn-sm" id="deleteLeadBtn" style="display:none;">Delete</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-light" id="cancelLeadBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveLeadBtn">Save Lead</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="activityModalBg">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head"><h2>Log Daily Activity</h2><button class="modal-close" id="activityModalClose">&times;</button></div>
+    <div class="modal-body" id="activityModalBody"></div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-light" id="cancelActivityBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveActivityBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DUPLICATE COMPANY MODAL -->
+<div class="modal-bg" id="dupCompanyBg">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head"><h2>Company already exists</h2><button class="modal-close" id="dupCompanyClose">&times;</button></div>
+    <div class="modal-body" id="dupCompanyBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-light" id="dupCreateAnywayBtn">Create New Anyway</button>
+      <button class="btn btn-primary" id="dupUpdateExistingBtn">Update Existing Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- QUICK ADD MODAL -->
+<div class="modal-bg" id="quickAddBg">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head"><h2>Quick Add Lead</h2><button class="modal-close" id="quickAddClose">&times;</button></div>
+    <div class="modal-body" id="quickAddBody"></div>
+    <div class="modal-foot">
+      <div style="font-size:11.5px;color:var(--slate-soft);max-width:180px;">You can fill in the rest later from the card.</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-light" id="quickAddCancel">Cancel</button>
+        <button class="btn btn-primary" id="quickAddSave">Add Lead</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QUOTATION MODAL -->
+<div class="modal-bg" id="quoteModalBg">
+  <div class="modal" style="max-width:900px;">
+    <div class="modal-head">
+      <h2 id="quoteModalTitle">New Quotation</h2>
+      <button class="modal-close" id="quoteModalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="quoteModalBody"></div>
+    <div class="modal-foot">
+      <div>
+        <button class="btn btn-danger btn-sm" id="deleteQuoteBtn" style="display:none;">Delete</button>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-light" id="cancelQuoteBtn">Cancel</button>
+        <button class="btn btn-light" id="saveQuoteBtn">Save</button>
+        <button class="btn btn-light" id="downloadDocxBtn">⬇ Save &amp; Download Word</button>
+        <button class="btn btn-primary" id="printQuoteBtn">🖨 Save &amp; Print / PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="quotePrintArea"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================= DATA MODEL ============================= */
+const STATUSES = ["New","Proposal","Deposit","Follow-Up Ongoing","Meeting Follow-Up","Won","Lost"];
+const STATUS_COLORS = {
+  "New":"#9AA8CC","Proposal":"#1DBEB0","Deposit":"#E8B33D","Follow-Up Ongoing":"#8C9BF0",
+  "Meeting Follow-Up":"#DB8CEA","Won":"#3ED892","Lost":"#FF6E79"
+};
+const MEETING_STATUSES = ["","Show","No-Show","Rescheduled By Us","Rescheduled By Them","Cancel","DQ"];
+const LOSS_REASONS = ["Price","Timing","Partner-Spouse","Competitor","Ghosted","Not Qualified"];
+const SOURCES_DEFAULT = ["Referral","Cold Outbound","WhatsApp","Inbound Lead","Paid Ad","Organic Social","Event","Partner"];
+
+let STATE = {
+  leads: [],
+  activity: [],   // {id, date, setter, dials, dms, conversations}
+  quotations: [],
+  settings: { revenueGoal: 100000, commissionBase: "cash", quotationDefaults: null }, // "cash" or "deal"
+};
+
+const ROLE_PRESETS = {
+  admin:  {label:"Admin",  perms:{create:true,  edit:true,  delete:true,  viewMoney:true,  manageUsers:true}},
+  closer: {label:"Closer", perms:{create:true,  edit:true,  delete:false, viewMoney:true,  manageUsers:false}},
+  setter: {label:"Setter", perms:{create:true,  edit:true,  delete:false, viewMoney:false, manageUsers:false}},
+  viewer: {label:"Viewer", perms:{create:false, edit:false, delete:false, viewMoney:true,  manageUsers:false}},
+};
+
+let editingLeadId = null;
+let logSort = { key: "dateCreated", dir: "desc" };
+let kanbanView = "board";
+
+/* ============================= API CLIENT =============================
+   Everything now lives in a real database on the server — this browser only
+   holds a session token (in localStorage, so a refresh doesn't log you out)
+   plus whatever the server just sent it. The server re-checks every
+   permission on every request using the database's copy of your role — see
+   auth.js / requirePerm() on the backend — so nothing here is a security
+   boundary, just UI convenience. */
+let authToken = localStorage.getItem('PIPELINE_CRM_token') || null;
+let STATE_CURRENT_USER = null; // full {id,name,username,role,perms} for whoever is logged in
+
+async function api(path, opts={}){
+  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  const res = await fetch('/api'+path, Object.assign({}, opts, {headers}));
+  let data = null;
+  try{ data = await res.json(); }catch(e){ /* no body */ }
+  if(!res.ok){
+    if(res.status === 401){ clearSession(); renderLogin(); document.getElementById('loginBg').classList.add('open'); }
+    throw new Error((data && data.error) || `Request failed (${res.status})`);
+  }
+  return data;
+}
+function setSession(token, user){
+  authToken = token;
+  STATE_CURRENT_USER = user;
+  localStorage.setItem('PIPELINE_CRM_token', token);
+}
+function clearSession(){
+  authToken = null;
+  STATE_CURRENT_USER = null;
+  localStorage.removeItem('PIPELINE_CRM_token');
+}
+
+async function loadAll(){
+  const [leadsRes, activityRes, settingsRes, quotesRes] = await Promise.all([
+    api('/leads'), api('/activity'), api('/settings'), api('/quotations')
+  ]);
+  STATE.leads = leadsRes.leads;
+  STATE.activity = activityRes.activity;
+  STATE.settings = settingsRes.settings;
+  STATE.quotations = quotesRes.quotations;
+}
+// Individual mutations now go straight to the API at their call sites
+// instead of a bulk save — see the Kanban drag/drop, lead modal, activity
+// modal, and settings handlers below, each of which calls api(...) and
+// merges the server's response back into STATE.
+
+function uid(){ return 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function uidU(){ return 'U' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+/* ============================= ACCESS / PERMISSIONS =============================
+   This is now just UI convenience — hiding buttons, disabling inputs — driven by
+   the perms the server sent back on login. The actual security boundary is
+   server-side: every mutating API route re-checks the caller's permission against
+   the database record for their session, so hiding a button here is not what
+   stops an unauthorized action; the server refusing the request is. */
+function currentUser(){ return STATE_CURRENT_USER; }
+function isAdmin(){ const u = currentUser(); return !!u && u.role==='admin'; }
+function can(key){ const u = currentUser(); return !!u && !!u.perms && !!u.perms[key]; }
+function maskMoney(str){ return can('viewMoney') ? str : '••••';}
+function requireAdminOrBlock(){
+  if(isAdmin()) return true;
+  showToast("You don't have rights to change team access");
+  renderAdmin();
+  return false;
+}
+
+/* ============================= XLSX IMPORT / EXPORT ============================= */
+/* Same column set is used for both directions, so a file you export can be edited and
+   re-imported to update those same leads (matched by "Lead ID"), and a blank copy of
+   this file works as the upload template for brand-new leads. */
+const XLSX_HEADER_MAP = [
+  ["id","Lead ID"],
+  ["leadName","Lead Name"],
+  ["company","Company"],
+  ["email","Email"],
+  ["phone","Phone"],
+  ["source","Source"],
+  ["setterName","Setter Name"],
+  ["closerName","Closer Name"],
+  ["status","Status"],
+  ["dateCreated","Date Created"],
+  ["firstContactDateTime","First Contact Date/Time"],
+  ["dateMeetingBooked","Date Meeting Booked"],
+  ["dateOfMeeting","Date of Meeting"],
+  ["meetingTime","Meeting Time"],
+  ["meetingStatus","Meeting Status"],
+  ["offerMade","Offer Made (yes/no)"],
+  ["saleType","Sale Type"],
+  ["lossReason","Loss Reason"],
+  ["remarks","Remarks"],
+  ["depositAmount","Deposit Amount"],
+  ["totalDealValue","Total Deal Value"],
+  ["cashCollected","Cash Collected"],
+  ["datePaidInFull","Date Paid In Full"],
+  ["refundAmount","Refund/Clawback Amount"],
+  ["commissionPct","Commission %"],
+  ["lastTouchDate","Last Touch Date"],
+];
+
+function exportLeadsXLSX(){
+  const headers = XLSX_HEADER_MAP.map(([,h])=>h);
+  const rows = STATE.leads.map(lead=>{
+    const row = {};
+    XLSX_HEADER_MAP.forEach(([key,h])=>{ row[h] = lead[key] !== undefined && lead[key] !== null ? lead[key] : ''; });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+  ws['!cols'] = headers.map(h=> ({wch: Math.max(14, h.length+2)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Leads");
+  const stamp = todayISO();
+  XLSX.writeFile(wb, `pipeline-leads-${stamp}.xlsx`);
+  showToast(rows.length ? `Exported ${rows.length} lead${rows.length===1?'':'s'}` : 'Exported blank template (no leads yet)');
+}
+
+async function shareLeadsXLSX(){
+  // Leads now sync automatically for everyone on this server, so Share/Import
+  // is mainly useful for backups or handing a snapshot to someone offline.
+  // This hands the exported file straight to
+  // the device's native share sheet (email, WhatsApp, Drive, AirDrop, etc.)
+  // in one tap, when the browser supports the Web Share API with files —
+  // mainly Chrome/Safari on Android and iOS, and some desktop Chrome/Edge.
+  const headers = XLSX_HEADER_MAP.map(([,h])=>h);
+  const rows = STATE.leads.map(lead=>{
+    const row = {};
+    XLSX_HEADER_MAP.forEach(([key,h])=>{ row[h] = lead[key] !== undefined && lead[key] !== null ? lead[key] : ''; });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+  ws['!cols'] = headers.map(h=> ({wch: Math.max(14, h.length+2)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Leads");
+  const stamp = todayISO();
+  const filename = `pipeline-leads-${stamp}.xlsx`;
+  const arrayBuf = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  const file = new File([arrayBuf], filename, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file], title:'Pipeline leads export', text:`Leads export — ${stamp}`});
+      showToast('Shared. Have them use Import XLSX to bring it in.');
+      return;
+    }catch(err){
+      if(err && err.name === 'AbortError') return; // user cancelled the share sheet
+      // fall through to download fallback below
+    }
+  }
+  // Fallback: this browser can't share files directly, so just download it —
+  // send the downloaded file over email/Slack/WhatsApp/Drive yourself.
+  const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Direct share isn\'t supported here — file downloaded, send it yourself. They import it with the Import XLSX button.');
+}
+
+function normalizeImportValue(key, raw){
+  let v = (raw===undefined || raw===null) ? '' : String(raw).trim();
+  if(v === '') return '';
+  if(key === 'status'){
+    const match = STATUSES.find(s=> s.toLowerCase() === v.toLowerCase());
+    return match || 'New';
+  }
+  if(key === 'meetingStatus'){
+    const match = MEETING_STATUSES.find(s=> s && s.toLowerCase() === v.toLowerCase());
+    return match || '';
+  }
+  if(key === 'lossReason'){
+    const match = LOSS_REASONS.find(s=> s.toLowerCase() === v.toLowerCase());
+    return match || '';
+  }
+  if(key === 'saleType'){
+    const opts = ['1-Call Sale','Follow-Up Sale'];
+    const match = opts.find(s=> s.toLowerCase() === v.toLowerCase());
+    return match || '';
+  }
+  if(key === 'offerMade'){
+    const low = v.toLowerCase();
+    if(low === 'yes' || low === 'y' || low === 'true') return 'yes';
+    if(low === 'no' || low === 'n' || low === 'false') return 'no';
+    return '';
+  }
+  if(['depositAmount','totalDealValue','cashCollected','refundAmount','commissionPct'].includes(key)){
+    const n = Number(v.replace(/[$,]/g,''));
+    return isNaN(n) ? '' : n;
+  }
+  if(['dateCreated','dateMeetingBooked','dateOfMeeting','datePaidInFull','lastTouchDate'].includes(key)){
+    return xlsxToISODate(raw);
+  }
+  if(key === 'firstContactDateTime'){
+    return xlsxToISODateTime(raw);
+  }
+  return v;
+}
+function xlsxToISODate(raw){
+  if(raw===undefined||raw===null||raw==='') return '';
+  if(raw instanceof Date && !isNaN(raw)) return raw.toISOString().slice(0,10);
+  if(typeof raw === 'number'){ const d = XLSX.SSF.parse_date_code(raw); if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; }
+  const s = String(raw).trim();
+  const d = new Date(s);
+  if(!isNaN(d)) return d.toISOString().slice(0,10);
+  return s;
+}
+function xlsxToISODateTime(raw){
+  if(raw===undefined||raw===null||raw==='') return '';
+  if(raw instanceof Date && !isNaN(raw)) return raw.toISOString().slice(0,16);
+  if(typeof raw === 'number'){
+    const d = XLSX.SSF.parse_date_code(raw);
+    if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}T${String(d.H||0).padStart(2,'0')}:${String(d.M||0).padStart(2,'0')}`;
+  }
+  const s = String(raw).trim();
+  const d = new Date(s);
+  if(!isNaN(d)) return d.toISOString().slice(0,16);
+  return s;
+}
+
+function importLeadsXLSX(file){
+  if(!can('create')){ showToast("You don't have access to import leads"); return; }
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    let wb;
+    try{ wb = XLSX.read(e.target.result, {type:'array'}); }
+    catch(err){ showToast('Could not read that file — is it a valid .xlsx?'); return; }
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!rawRows.length){ showToast('That file has no rows to import'); return; }
+
+    const headerToKey = {};
+    XLSX_HEADER_MAP.forEach(([key,h])=> headerToKey[h.toLowerCase()] = key);
+
+    // Client just parses the spreadsheet into plain rows; the server decides
+    // what's an update vs a new lead and actually writes to the database.
+    const rows = rawRows.map(raw=>{
+      const lead = {};
+      Object.keys(raw).forEach(col=>{
+        const key = headerToKey[col.trim().toLowerCase()];
+        if(key) lead[key] = normalizeImportValue(key, raw[col]);
+      });
+      return lead;
+    });
+
+    try{
+      const result = await api('/leads/bulk-import', { method:'POST', body: JSON.stringify({ rows }) });
+      await loadAll();
+      renderKanban();
+      if(document.getElementById('view-log').classList.contains('active')) renderLog();
+      if(document.getElementById('view-dash').classList.contains('active')) renderDash();
+      showToast(`Imported: ${result.created} added, ${result.updated} updated${result.mergedByCompany?` (${result.mergedByCompany} matched by company name)`:''}${result.skipped?`, ${result.skipped} skipped (no lead name)`:''}`);
+    }catch(err){ showToast(err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ============================= HELPERS ============================= */
+function fmtMoney(n){
+  if(!can('viewMoney')) return '••••';
+  n = Number(n)||0;
+  return '₹' + n.toLocaleString('en-IN',{maximumFractionDigits:0});
+}
+function fmtDate(dateStr){
+  if(!dateStr) return '—';
+  const d = new Date(dateStr);
+  if(isNaN(d)) return '—';
+  return d.toLocaleDateString('en-IN', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+function fmtMeetingWhen(lead){
+  const dateStr = fmtDate(lead.dateOfMeeting);
+  if(!lead.dateOfMeeting) return dateStr;
+  if(!lead.meetingTime) return dateStr;
+  const [h,mm] = lead.meetingTime.split(':');
+  const hour = Number(h);
+  const ampm = hour>=12 ? 'PM' : 'AM';
+  const hour12 = ((hour+11)%12)+1;
+  return `${dateStr}, ${hour12}:${mm} ${ampm}`;
+}
+function fmtLogWhen(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  if(isNaN(d)) return '—';
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + ' ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+}
+function fmtPct(n){ if(n===null||n===undefined||isNaN(n)) return '—'; return n.toFixed(1)+'%'; }
+function fmtNum(n,d=1){ if(n===null||n===undefined||isNaN(n)) return '—'; return n.toFixed(d); }
+function daysBetween(a,b){ // b - a in days
+  if(!a||!b) return null;
+  const d1=new Date(a), d2=new Date(b);
+  if(isNaN(d1)||isNaN(d2)) return null;
+  return (d2-d1)/86400000;
+}
+function minutesBetween(a,b){
+  if(!a||!b) return null;
+  const d1=new Date(a), d2=new Date(b);
+  if(isNaN(d1)||isNaN(d2)) return null;
+  return (d2-d1)/60000;
+}
+function daysSince(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr);
+  if(isNaN(d)) return null;
+  return (Date.now()-d.getTime())/86400000;
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function avg(arr){ const v = arr.filter(x=>x!==null && x!==undefined && !isNaN(x)); if(!v.length) return null; return v.reduce((a,b)=>a+b,0)/v.length; }
+function esc(s){ return (s===undefined||s===null)?'':String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---- leak / flag detection ---- */
+function bookingLagDays(lead){ return daysBetween(lead.dateMeetingBooked, lead.dateOfMeeting); }
+function isBookingLagLeak(lead){
+  const lag = bookingLagDays(lead);
+  return lag !== null && lag > 4;
+}
+function isFollowUpAging(lead){
+  if(lead.status !== "Follow-Up Ongoing") return false;
+  const ref = lead.lastTouchDate || lead.dateCreated;
+  const ds = daysSince(ref);
+  return ds !== null && ds >= 7;
+}
+function isDepositUnpaidLeak(lead){
+  if(!(Number(lead.depositAmount)>0)) return false;
+  if(lead.datePaidInFull) return false;
+  const ref = lead.dateOfMeeting || lead.dateCreated;
+  const ds = daysSince(ref);
+  return ds !== null && ds >= 14;
+}
+function leadLeaks(lead){
+  const out = [];
+  if(isBookingLagLeak(lead)) out.push({key:'lag', label:'Booking lag '+Math.round(bookingLagDays(lead))+'d'});
+  if(isFollowUpAging(lead)) out.push({key:'aging', label:'Untouched '+Math.floor(daysSince(lead.lastTouchDate||lead.dateCreated))+'d'});
+  if(isDepositUnpaidLeak(lead)) out.push({key:'deposit', label:'Deposit unpaid'});
+  return out;
+}
+function earningsFor(lead){
+  const base = STATE.settings.commissionBase === 'deal' ? Number(lead.totalDealValue||0) : Number(lead.cashCollected||0);
+  const net = base - Number(lead.refundAmount||0);
+  const pct = Number(lead.commissionPct||0)/100;
+  return Math.max(net,0) * pct;
+}
+
+/* ============================= INIT / TABS ============================= */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='kanban') renderKanban();
+    if(btn.dataset.view==='log') renderLog();
+    if(btn.dataset.view==='dash') renderDash();
+    if(btn.dataset.view==='proj') renderProj();
+    if(btn.dataset.view==='quote') renderQuoteList();
+    if(btn.dataset.view==='admin') renderAdmin();
+  });
+});
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ============================= KANBAN ============================= */
+function allSources(){
+  const s = new Set(SOURCES_DEFAULT);
+  STATE.leads.forEach(l=>{ if(l.source) s.add(l.source); });
+  return Array.from(s);
+}
+function allReps(field){
+  const s = new Set();
+  STATE.leads.forEach(l=>{ if(l[field]) s.add(l[field]); });
+  return Array.from(s).sort();
+}
+function allRepsCombined(){
+  const s = new Set([...allReps('setterName'), ...allReps('closerName')]);
+  return Array.from(s).sort();
+}
+
+function kanbanSearchFiltered(){
+  const q = (document.getElementById('kanbanSearch')?.value||'').toLowerCase().trim();
+  if(!q) return STATE.leads;
+  return STATE.leads.filter(l=> [l.leadName,l.company,l.email,l.phone].join(' ').toLowerCase().includes(q));
+}
+
+function renderKanban(){
+  if(kanbanView==='board'){
+    document.getElementById('board').style.display='';
+    document.getElementById('kanbanAlt').style.display='none';
+    renderBoard();
+  } else if(kanbanView==='list'){
+    document.getElementById('board').style.display='none';
+    document.getElementById('kanbanAlt').style.display='';
+    renderKanbanList();
+  } else {
+    document.getElementById('board').style.display='none';
+    document.getElementById('kanbanAlt').style.display='';
+    renderKanbanCalendar();
+  }
+}
+
+function renderBoard(){
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  const filtered = kanbanSearchFiltered();
+  STATUSES.forEach(status=>{
+    const leads = filtered.filter(l=>l.status===status);
+    const col = document.createElement('div');
+    col.className='column';
+    col.dataset.status = status;
+    col.innerHTML = `
+      <div class="column-head" style="background:${STATUS_COLORS[status]}33;">
+        <h3 style="color:${STATUS_COLORS[status]}">${status}</h3>
+        <span class="col-count">${leads.length}</span>
+      </div>
+      <div class="column-body"></div>`;
+    const body = col.querySelector('.column-body');
+    leads.sort((a,b)=> new Date(b.dateCreated||0) - new Date(a.dateCreated||0));
+    leads.forEach(lead=> body.appendChild(renderCard(lead)));
+
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', ()=> col.classList.remove('drag-over'));
+    col.addEventListener('drop', e=>{
+      e.preventDefault(); col.classList.remove('drag-over');
+      if(!can('edit')){ showToast("You don't have edit access"); return; }
+      const id = e.dataTransfer.getData('text/plain');
+      moveLeadStatus(id, status);
+    });
+    board.appendChild(col);
+  });
+}
+
+function renderKanbanList(){
+  const wrap = document.getElementById('kanbanAlt');
+  const leads = kanbanSearchFiltered().slice().sort((a,b)=> new Date(b.dateCreated||0) - new Date(a.dateCreated||0));
+  if(!leads.length){ wrap.innerHTML = `<div class="empty"><h3>No leads match</h3></div>`; return; }
+  wrap.innerHTML = leads.map(l=>{
+    const leaks = leadLeaks(l);
+    return `<div class="list-row ${leaks.length?'leak-strip':''}" data-id="${l.id}">
+      <span class="status-pill" style="background:${STATUS_COLORS[l.status]}33;color:${STATUS_COLORS[l.status]}">${l.status}</span>
+      <span class="lname">${esc(l.leadName)||'Unnamed lead'}</span>
+      <span class="lmeta">${esc(l.company)||'—'}</span>
+      <span class="lmeta">Setter: ${esc(l.setterName)||'—'}</span>
+      <span class="lmeta">Closer: ${esc(l.closerName)||'—'}</span>
+      <span class="lmeta">Meeting: ${fmtMeetingWhen(l)}</span>
+      <span class="lmeta" style="margin-left:auto;">${fmtMoney(l.cashCollected||0)}</span>
+      ${leaks.length? `<span class="leak-tag"><span class="leak-dot">!</span>${leaks.length} flag${leaks.length>1?'s':''}</span>`:''}
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.list-row').forEach(r=> r.addEventListener('click', ()=> openLeadModal(r.dataset.id)));
+}
+
+function renderKanbanCalendar(){
+  const wrap = document.getElementById('kanbanAlt');
+  const leads = kanbanSearchFiltered().filter(l=>l.dateOfMeeting);
+  if(!leads.length){ wrap.innerHTML = `<div class="empty"><h3>No meetings scheduled yet</h3></div>`; return; }
+  const groups = {};
+  leads.forEach(l=>{ (groups[l.dateOfMeeting] = groups[l.dateOfMeeting]||[]).push(l); });
+  const dates = Object.keys(groups).sort();
+  wrap.innerHTML = dates.map(dt=>{
+    const isPast = new Date(dt) < new Date(todayISO());
+    return `<div class="cal-group">
+      <h4>${fmtDate(dt)} ${isPast? '<span class="leak-tag" style="margin-left:6px;">Past</span>':''}</h4>
+      ${groups[dt].map(l=>`<div class="list-row" data-id="${l.id}">
+        <span class="status-pill" style="background:${STATUS_COLORS[l.status]}33;color:${STATUS_COLORS[l.status]}">${l.status}</span>
+        <span class="lname">${esc(l.leadName)}</span>
+        <span class="lmeta">${esc(l.company)||'—'}</span>
+        <span class="lmeta">Closer: ${esc(l.closerName)||'—'}</span>
+        <span class="lmeta">${l.meetingStatus||'Not yet run'}</span>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.list-row').forEach(r=> r.addEventListener('click', ()=> openLeadModal(r.dataset.id)));
+}
+
+function renderCard(lead){
+  const div = document.createElement('div');
+  const leaks = leadLeaks(lead);
+  div.className = 'card' + (leaks.length ? ' leak-strip':'');
+  div.draggable = can('edit');
+  div.dataset.id = lead.id;
+  div.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', lead.id); });
+  div.addEventListener('click', (e)=>{ if(e.target.classList.contains('card-move')) return; openLeadModal(lead.id); });
+
+  const flagsHtml = leaks.map(f=>`<span class="leak-tag"><span class="leak-dot">!</span>${esc(f.label)}</span>`).join('');
+  const moveOptions = STATUSES.map(s=>`<option value="${s}" ${s===lead.status?'selected':''}>${s}</option>`).join('');
+
+  div.innerHTML = `
+    <div class="card-top">
+      <div>
+        <div class="card-name">${esc(lead.leadName)||'Unnamed lead'}</div>
+        <div class="card-co">${esc(lead.company)||''}</div>
+      </div>
+      <span class="card-badge">${esc(lead.source)||'—'}</span>
+    </div>
+    <div class="card-meta">
+      <div><b>Setter:</b> ${esc(lead.setterName)||'—'} &nbsp; <b>Closer:</b> ${esc(lead.closerName)||'—'}</div>
+      <div><b>Meeting:</b> ${fmtMeetingWhen(lead)} ${lead.meetingStatus? '· '+lead.meetingStatus:''}</div>
+      ${lead.status==='Lost' && lead.lossReason ? `<div><b>Lost:</b> ${esc(lead.lossReason)}</div>`:''}
+    </div>
+    ${(Number(lead.totalDealValue)||Number(lead.depositAmount)||Number(lead.cashCollected)) ? `<div class="card-money">${fmtMoney(lead.cashCollected||0)} collected · ${fmtMoney(lead.totalDealValue||0)} deal</div>` : ''}
+    ${lead.remarks ? `<div class="card-remarks" title="${esc(lead.remarks)}">📝 ${esc(lead.remarks.length>60?lead.remarks.slice(0,60)+'…':lead.remarks)}</div>` : ''}
+    ${lead.logs && lead.logs.length>1 ? `<div class="card-logbadge">🕐 ${lead.logs.length} updates — click to review</div>` : ''}
+    <div class="card-flags">${flagsHtml}</div>
+    <div class="card-footer">
+      <select class="card-move" ${can('edit')?'':'disabled'}>${moveOptions}</select>
+    </div>`;
+  div.querySelector('.card-move').addEventListener('change', (e)=>{ moveLeadStatus(lead.id, e.target.value); });
+  return div;
+}
+
+async function moveLeadStatus(id, newStatus){
+  const lead = STATE.leads.find(l=>l.id===id);
+  if(!lead) return;
+  if(newStatus === 'Lost' && !lead.lossReason){
+    openLeadModal(id, { forceStatus:'Lost', requireLossReason:true });
+    showToast('Choose a loss reason to move this to Lost');
+    return;
+  }
+  try{
+    const { lead: updated } = await api(`/leads/${id}`, { method:'PATCH', body: JSON.stringify({ status:newStatus }) });
+    Object.assign(lead, updated);
+  }catch(err){ showToast(err.message); return; }
+  renderKanban();
+  if(document.getElementById('view-log').classList.contains('active')) renderLog();
+}
+
+/* ============================= LEAD MODAL (ADD/EDIT) ============================= */
+async function checkCompanyDuplicate(company, excludeId){
+  if(!company || !company.trim()) return null;
+  try{
+    const qs = '?name='+encodeURIComponent(company.trim())+(excludeId?'&excludeId='+encodeURIComponent(excludeId):'');
+    const res = await api('/leads/check-company'+qs);
+    return res.match;
+  }catch(err){ return null; } // duplicate check is a courtesy, not a blocker — fail open
+}
+// Shows the existing record's details and lets the user either update that
+// record instead, or go ahead and create a separate new lead anyway.
+// Resolves to 'update' | 'create' | 'cancel'.
+function promptCompanyDuplicate(match){
+  return new Promise(resolve=>{
+    document.getElementById('dupCompanyBody').innerHTML = `
+      <p style="font-size:13px; margin-bottom:10px;">A lead for <b>${esc(match.company)}</b> already exists:</p>
+      <div class="log-detail">
+        <div class="log-detail-meta">${esc(match.leadName)||'Unnamed lead'}</div>
+        <div class="log-detail-changes">Status: ${esc(match.status)||'—'} · Setter: ${esc(match.setterName)||'—'} · Closer: ${esc(match.closerName)||'—'}</div>
+        <div class="log-detail-changes">Phone: ${esc(match.phone)||'—'} · Email: ${esc(match.email)||'—'}</div>
+        <div class="log-detail-changes">Meeting: ${fmtMeetingWhen(match)}${match.meetingStatus?' · '+esc(match.meetingStatus):''}</div>
+      </div>
+      <p style="font-size:12px; color:var(--slate-soft); margin-top:10px;">You can update that existing lead instead of creating a duplicate.</p>
+    `;
+    const bg = document.getElementById('dupCompanyBg');
+    bg.classList.add('open');
+    const cleanup = (result)=>{ bg.classList.remove('open'); resolve(result); };
+    document.getElementById('dupCompanyClose').onclick = ()=> cleanup('cancel');
+    document.getElementById('dupCreateAnywayBtn').onclick = ()=> cleanup('create');
+    document.getElementById('dupUpdateExistingBtn').onclick = ()=> cleanup('update');
+  });
+}
+function fieldRow(label, inputHtml, full=false){
+  return `<div class="fgroup ${full?'full':''}"><label>${label}</label>${inputHtml}</div>`;
+}
+function openLeadModal(id, opts={}){
+  editingLeadId = id || null;
+  const lead = id ? {...STATE.leads.find(l=>l.id===id)} : {
+    id: uid(), leadName:'', company:'', email:'', phone:'', source:'', setterName:'', closerName:'',
+    dateCreated: todayISO(), firstContactDateTime:'', dateMeetingBooked:'', dateOfMeeting:'', meetingTime:'',
+    meetingStatus:'', offerMade:'', saleType:'', status:'New', lossReason:'', remarks:'',
+    depositAmount:'', totalDealValue:'', cashCollected:'', datePaidInFull:'', refundAmount:'', commissionPct:'',
+    lastTouchDate: todayISO()
+  };
+  if(opts.forceStatus) lead.status = opts.forceStatus;
+  if(opts.prefillGaps){
+    // Fill in blanks on the existing record with values from the new-lead
+    // form the user just typed — never overwrites data that's already there.
+    Object.keys(opts.prefillGaps).forEach(k=>{
+      if(opts.prefillGaps[k] && !lead[k]) lead[k] = opts.prefillGaps[k];
+    });
+    showToast(`Showing existing lead for ${lead.company} — review and save to apply your changes`);
+  }
+
+  document.getElementById('leadModalTitle').textContent = id ? 'Edit Lead' : 'New Lead';
+  document.getElementById('deleteLeadBtn').style.display = id ? 'inline-flex' : 'none';
+
+  const sourceOpts = allSources().map(s=>`<option value="${esc(s)}" ${lead.source===s?'selected':''}>${s}</option>`).join('');
+  const statusOpts = STATUSES.map(s=>`<option value="${s}" ${lead.status===s?'selected':''}>${s}</option>`).join('');
+  const meetingOpts = MEETING_STATUSES.map(s=>`<option value="${s}" ${lead.meetingStatus===s?'selected':''}>${s||'—'}</option>`).join('');
+  const lossOpts = ['<option value="">—</option>'].concat(LOSS_REASONS.map(s=>`<option value="${s}" ${lead.lossReason===s?'selected':''}>${s}</option>`)).join('');
+  const saleTypeOpts = ['','1-Call Sale','Follow-Up Sale'].map(s=>`<option value="${s}" ${lead.saleType===s?'selected':''}>${s||'—'}</option>`).join('');
+
+  const body = document.getElementById('leadModalBody');
+  body.innerHTML = `
+    <div class="form-section">
+      <h4>Contact</h4>
+      <div class="form-grid">
+        ${fieldRow('Lead Name', `<input type="text" id="f_leadName" value="${esc(lead.leadName)}">`)}
+        ${fieldRow('Company', `<input type="text" id="f_company" value="${esc(lead.company)}">`)}
+        ${fieldRow('Email', `<input type="email" id="f_email" value="${esc(lead.email)}">`)}
+        ${fieldRow('Phone #', `<input type="tel" id="f_phone" placeholder="+91 98765 43210" value="${esc(lead.phone)}">`)}
+        ${fieldRow('Source', `<input type="text" list="sourceList" id="f_source" value="${esc(lead.source)}">`)}
+        ${fieldRow('Kanban Status', `<select id="f_status">${statusOpts}</select>`)}
+        ${fieldRow('Setter Name', `<input type="text" id="f_setterName" value="${esc(lead.setterName)}">`)}
+        ${fieldRow('Closer Name', `<input type="text" id="f_closerName" value="${esc(lead.closerName)}">`)}
+      </div>
+      <datalist id="sourceList">${allSources().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+    </div>
+
+    <div class="form-section">
+      <h4>Dates</h4>
+      <div class="form-grid">
+        ${fieldRow('Date Created', `<input type="date" id="f_dateCreated" value="${lead.dateCreated||''}">`)}
+        ${fieldRow('First Contact Date/Time', `<input type="datetime-local" id="f_firstContactDateTime" value="${lead.firstContactDateTime||''}">`)}
+        ${fieldRow('Date Meeting Booked', `<input type="date" id="f_dateMeetingBooked" value="${lead.dateMeetingBooked||''}">`)}
+        ${fieldRow('Date of Meeting', `<input type="date" id="f_dateOfMeeting" value="${lead.dateOfMeeting||''}">`)}
+        ${fieldRow('Meeting Time', `<input type="time" id="f_meetingTime" value="${lead.meetingTime||''}">`)}
+        ${fieldRow('Last Touch Date', `<input type="date" id="f_lastTouchDate" value="${lead.lastTouchDate||''}">`)}
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h4>Remarks</h4>
+      <div class="form-grid">
+        ${fieldRow('Anything important to remember about this lead', `<textarea id="f_remarks" rows="2" placeholder="Notes for this update — saved to this lead's history">${esc(lead.remarks||'')}</textarea>`, true)}
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h4>Meeting &amp; Call Outcome</h4>
+      <div class="form-grid">
+        ${fieldRow('Meeting Status', `<select id="f_meetingStatus">${meetingOpts}</select>`)}
+        ${fieldRow('Offer Made', `<select id="f_offerMade"><option value="">—</option><option value="yes" ${lead.offerMade==='yes'?'selected':''}>Yes</option><option value="no" ${lead.offerMade==='no'?'selected':''}>No</option></select>`)}
+        ${fieldRow('Sale Type', `<select id="f_saleType">${saleTypeOpts}</select>`)}
+        ${fieldRow('Loss Reason (required if Lost)', `<select id="f_lossReason">${lossOpts}</select>`)}
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h4>Money</h4>
+      <div class="form-grid">
+        ${fieldRow('Deposit Amount', `<input type="number" id="f_depositAmount" value="${lead.depositAmount}" min="0">`)}
+        ${fieldRow('Total Deal Value', `<input type="number" id="f_totalDealValue" value="${lead.totalDealValue}" min="0">`)}
+        ${fieldRow('Cash Collected', `<input type="number" id="f_cashCollected" value="${lead.cashCollected}" min="0">`)}
+        ${fieldRow('Date Paid In Full', `<input type="date" id="f_datePaidInFull" value="${lead.datePaidInFull||''}">`)}
+        ${fieldRow('Refund / Clawback Amount', `<input type="number" id="f_refundAmount" value="${lead.refundAmount}" min="0">`)}
+        ${fieldRow('Commission %', `<input type="number" id="f_commissionPct" value="${lead.commissionPct}" min="0" max="100" step="0.1">`)}
+      </div>
+      <div class="calc-box" style="margin-top:10px;">
+        <span>Auto-calculated Earnings — (${STATE.settings.commissionBase==='deal'?'Total Deal Value':'Cash Collected'} − Refunds) × Commission %</span>
+        <b id="earningsPreview">$0</b>
+      </div>
+    </div>
+    <div class="err-msg" id="leadErr">Loss Reason is required when status is Lost.</div>
+    ${id && lead.logs && lead.logs.length ? `
+    <div class="form-section">
+      <h4>Update History ${lead.logs.length>1?`(${lead.logs.length} updates)`:''}</h4>
+      ${lead.logs.length>1 ? `
+        <select id="f_logPicker" style="margin-bottom:8px;">
+          ${lead.logs.slice().reverse().map((log,i)=>`<option value="${lead.logs.length-1-i}">${fmtLogWhen(log.at)} — ${esc(log.by)}${log.changes&&log.changes.length?` (${log.changes.join(', ')})`:''}</option>`).join('')}
+        </select>
+      ` : ''}
+      <div id="f_logDetail" class="log-detail"></div>
+    </div>
+    ` : ''}
+  `;
+
+  function recalcPreview(){
+    const cash = Number(document.getElementById('f_cashCollected').value)||0;
+    const deal = Number(document.getElementById('f_totalDealValue').value)||0;
+    const refund = Number(document.getElementById('f_refundAmount').value)||0;
+    const pct = Number(document.getElementById('f_commissionPct').value)||0;
+    const base = STATE.settings.commissionBase==='deal'?deal:cash;
+    const e = Math.max(base-refund,0)*(pct/100);
+    document.getElementById('earningsPreview').textContent = fmtMoney(e);
+  }
+  ['f_cashCollected','f_totalDealValue','f_refundAmount','f_commissionPct'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', recalcPreview);
+  });
+  recalcPreview();
+
+  function renderLogDetail(){
+    const detailEl = document.getElementById('f_logDetail');
+    if(!detailEl) return;
+    const picker = document.getElementById('f_logPicker');
+    const idx = picker ? Number(picker.value) : (lead.logs.length-1);
+    const log = lead.logs[idx];
+    if(!log){ detailEl.innerHTML=''; return; }
+    detailEl.innerHTML = `
+      <div class="log-detail-meta">${fmtLogWhen(log.at)} · ${esc(log.by)}</div>
+      ${log.changes&&log.changes.length ? `<div class="log-detail-changes">Changed: ${log.changes.map(esc).join(', ')}</div>` : (log.note?`<div class="log-detail-changes">${esc(log.note)}</div>`:'')}
+      ${log.remarks ? `<div class="log-detail-remarks">${esc(log.remarks)}</div>` : `<div class="log-detail-remarks empty">No remarks left for this update.</div>`}
+    `;
+  }
+  if(id && lead.logs && lead.logs.length){
+    renderLogDetail();
+    document.getElementById('f_logPicker')?.addEventListener('change', renderLogDetail);
+  }
+
+  // Booking a new meeting date defaults "Date Meeting Booked" to today,
+  // unless that field already has a value — never overwrites something the
+  // user (or a prior save) already set.
+  document.getElementById('f_dateOfMeeting').addEventListener('change', ()=>{
+    const bookedEl = document.getElementById('f_dateMeetingBooked');
+    if(!bookedEl.value) bookedEl.value = todayISO();
+  });
+
+  document.getElementById('leadModalBg').classList.add('open');
+  document.getElementById('leadModalBg')._newLead = !id;
+  document.getElementById('leadModalBg')._draftId = lead.id;
+}
+
+function collectLeadForm(){
+  return {
+    leadName: document.getElementById('f_leadName').value.trim(),
+    company: document.getElementById('f_company').value.trim(),
+    email: document.getElementById('f_email').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    source: document.getElementById('f_source').value.trim(),
+    status: document.getElementById('f_status').value,
+    setterName: document.getElementById('f_setterName').value.trim(),
+    closerName: document.getElementById('f_closerName').value.trim(),
+    dateCreated: document.getElementById('f_dateCreated').value,
+    firstContactDateTime: document.getElementById('f_firstContactDateTime').value,
+    dateMeetingBooked: document.getElementById('f_dateMeetingBooked').value,
+    dateOfMeeting: document.getElementById('f_dateOfMeeting').value,
+    meetingTime: document.getElementById('f_meetingTime').value,
+    remarks: document.getElementById('f_remarks').value.trim(),
+    lastTouchDate: document.getElementById('f_lastTouchDate').value,
+    meetingStatus: document.getElementById('f_meetingStatus').value,
+    offerMade: document.getElementById('f_offerMade').value,
+    saleType: document.getElementById('f_saleType').value,
+    lossReason: document.getElementById('f_lossReason').value,
+    depositAmount: document.getElementById('f_depositAmount').value,
+    totalDealValue: document.getElementById('f_totalDealValue').value,
+    cashCollected: document.getElementById('f_cashCollected').value,
+    datePaidInFull: document.getElementById('f_datePaidInFull').value,
+    refundAmount: document.getElementById('f_refundAmount').value,
+    commissionPct: document.getElementById('f_commissionPct').value,
+  };
+}
+
+document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
+  const isNewDraft = document.getElementById('leadModalBg')._newLead;
+  if(!can(isNewDraft?'create':'edit')){ showToast("You don't have access to do that"); return; }
+  const data = collectLeadForm();
+  if(data.status === 'Lost' && !data.lossReason){
+    document.getElementById('leadErr').style.display = 'block';
+    return;
+  }
+  document.getElementById('leadErr').style.display = 'none';
+  const id = document.getElementById('leadModalBg')._draftId;
+  const isNew = document.getElementById('leadModalBg')._newLead;
+
+  if(isNew && data.company){
+    const match = await checkCompanyDuplicate(data.company);
+    if(match){
+      closeLeadModal();
+      const choice = await promptCompanyDuplicate(match);
+      if(choice === 'cancel') return;
+      if(choice === 'update'){
+        openLeadModal(match.id, { prefillGaps: data });
+        return;
+      }
+      // choice === 'create' falls through and creates the new lead — reopen
+      // isn't needed since we already have the collected form data in hand.
+    }
+  }
+
+  try{
+    if(isNew){
+      const { lead } = await api('/leads', { method:'POST', body: JSON.stringify(data) });
+      STATE.leads.push(lead);
+    } else {
+      const { lead } = await api(`/leads/${id}`, { method:'PATCH', body: JSON.stringify(data) });
+      const idx = STATE.leads.findIndex(l=>l.id===id);
+      STATE.leads[idx] = lead;
+    }
+  }catch(err){ showToast(err.message); return; }
+  closeLeadModal();
+  renderKanban();
+  showToast(isNew? 'Lead added' : 'Lead updated');
+  if(document.getElementById('view-log').classList.contains('active')) renderLog();
+  if(document.getElementById('view-dash').classList.contains('active')) renderDash();
+});
+document.getElementById('deleteLeadBtn').addEventListener('click', async ()=>{
+  if(!can('delete')){ showToast("You don't have delete access"); return; }
+  const id = document.getElementById('leadModalBg')._draftId;
+  if(!confirm('Delete this lead permanently?')) return;
+  try{ await api(`/leads/${id}`, { method:'DELETE' }); }
+  catch(err){ showToast(err.message); return; }
+  STATE.leads = STATE.leads.filter(l=>l.id!==id);
+  closeLeadModal();
+  renderKanban();
+  showToast('Lead deleted');
+});
+function closeLeadModal(){ document.getElementById('leadModalBg').classList.remove('open'); editingLeadId=null; }
+document.getElementById('leadModalClose').addEventListener('click', closeLeadModal);
+document.getElementById('cancelLeadBtn').addEventListener('click', closeLeadModal);
+document.getElementById('newLeadBtn').addEventListener('click', ()=>{
+  if(!can('create')){ showToast("You don't have access to add leads"); return; }
+  openLeadModal(null);
+});
+
+/* ============================= QUICK ADD ============================= */
+document.getElementById('quickAddBtn').addEventListener('click', ()=>{
+  if(!can('create')){ showToast("You don't have access to add leads"); return; }
+  const body = document.getElementById('quickAddBody');
+  body.innerHTML = `
+    <div class="form-grid">
+      ${fieldRow('Lead Name', `<input type="text" id="qa_leadName" placeholder="Who's the lead?" autofocus>`, true)}
+      ${fieldRow('Company', `<input type="text" id="qa_company" placeholder="Company (optional)">`)}
+      ${fieldRow('Phone #', `<input type="tel" id="qa_phone" placeholder="+91 98765 43210">`)}
+      ${fieldRow('Source', `<input type="text" id="qa_source" list="qaSourceList" placeholder="e.g. WhatsApp">`)}
+    </div>
+    <datalist id="qaSourceList">${allSources().map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+  `;
+  document.getElementById('quickAddBg').classList.add('open');
+  setTimeout(()=> document.getElementById('qa_leadName')?.focus(), 50);
+});
+function closeQuickAdd(){ document.getElementById('quickAddBg').classList.remove('open'); }
+document.getElementById('quickAddClose').addEventListener('click', closeQuickAdd);
+document.getElementById('quickAddCancel').addEventListener('click', closeQuickAdd);
+document.getElementById('quickAddSave').addEventListener('click', async ()=>{
+  const leadName = document.getElementById('qa_leadName').value.trim();
+  if(!leadName){ showToast('Enter a lead name'); return; }
+  const data = {
+    leadName,
+    company: document.getElementById('qa_company').value.trim(),
+    phone: document.getElementById('qa_phone').value.trim(),
+    source: document.getElementById('qa_source').value.trim(),
+    status: 'New',
+  };
+  if(data.company){
+    const match = await checkCompanyDuplicate(data.company);
+    if(match){
+      closeQuickAdd();
+      const choice = await promptCompanyDuplicate(match);
+      if(choice === 'cancel') return;
+      if(choice === 'update'){
+        openLeadModal(match.id, { prefillGaps: data });
+        return;
+      }
+      // choice === 'create' falls through and creates the new lead
+    }
+  }
+  try{
+    const { lead } = await api('/leads', { method:'POST', body: JSON.stringify(data) });
+    STATE.leads.push(lead);
+  }catch(err){ showToast(err.message); return; }
+  closeQuickAdd();
+  renderKanban();
+  showToast('Lead added — fill in the rest anytime from its card');
+  if(document.getElementById('view-log').classList.contains('active')) renderLog();
+  if(document.getElementById('view-dash').classList.contains('active')) renderDash();
+});
+// Enter key submits Quick Add from any of its fields
+document.getElementById('quickAddBody').addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('quickAddSave').click(); }
+});
+document.getElementById('exportXlsxBtn').addEventListener('click', ()=>{
+  if(!can('viewMoney') && !isAdmin()){ showToast("You don't have access to export"); return; }
+  exportLeadsXLSX();
+});
+document.getElementById('shareXlsxBtn').addEventListener('click', ()=>{
+  if(!can('viewMoney') && !isAdmin()){ showToast("You don't have access to export"); return; }
+  shareLeadsXLSX();
+});
+document.getElementById('importXlsxBtn').addEventListener('click', ()=>{
+  if(!can('create')){ showToast("You don't have access to import"); return; }
+  document.getElementById('importXlsxFile').click();
+});
+document.getElementById('importXlsxFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(file) importLeadsXLSX(file);
+  e.target.value = '';
+});
+document.getElementById('kanbanSearch').addEventListener('input', ()=> renderKanban());
+document.querySelectorAll('.vt-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    kanbanView = btn.dataset.kview;
+    renderKanban();
+  });
+});
+
+/* ============================= ACTIVITY MODAL ============================= */
+document.getElementById('logActivityBtn').addEventListener('click', ()=>{
+  if(!can('create')){ showToast("You don't have access to log activity"); return; }
+  const body = document.getElementById('activityModalBody');
+  const reps = allReps('setterName');
+  body.innerHTML = `
+    <div class="form-grid">
+      ${fieldRow('Date', `<input type="date" id="a_date" value="${todayISO()}">`)}
+      ${fieldRow('Setter', `<input type="text" id="a_setter" list="setterList" placeholder="Setter name">`)}
+      ${fieldRow('Dials', `<input type="number" id="a_dials" min="0" value="0">`)}
+      ${fieldRow('DMs Sent', `<input type="number" id="a_dms" min="0" value="0">`)}
+      ${fieldRow('Conversations', `<input type="number" id="a_conv" min="0" value="0">`, true)}
+    </div>
+    <datalist id="setterList">${reps.map(r=>`<option value="${esc(r)}">`).join('')}</datalist>
+  `;
+  document.getElementById('activityModalBg').classList.add('open');
+});
+document.getElementById('activityModalClose').addEventListener('click', ()=> document.getElementById('activityModalBg').classList.remove('open'));
+document.getElementById('cancelActivityBtn').addEventListener('click', ()=> document.getElementById('activityModalBg').classList.remove('open'));
+document.getElementById('saveActivityBtn').addEventListener('click', async ()=>{
+  const setter = document.getElementById('a_setter').value.trim();
+  if(!setter){ showToast('Enter a setter name'); return; }
+  const payload = {
+    date: document.getElementById('a_date').value || todayISO(),
+    setter, dials: Number(document.getElementById('a_dials').value)||0,
+    dms: Number(document.getElementById('a_dms').value)||0,
+    conversations: Number(document.getElementById('a_conv').value)||0
+  };
+  try{
+    const { activity } = await api('/activity', { method:'POST', body: JSON.stringify(payload) });
+    STATE.activity.push(activity);
+  }catch(err){ showToast(err.message); return; }
+  document.getElementById('activityModalBg').classList.remove('open');
+  showToast('Activity logged');
+  if(document.getElementById('view-dash').classList.contains('active')) renderDash();
+});
+
+/* ============================= QUOTATION ============================= */
+const BIZONET_LOGO_DATA_URI = "data:image/jpeg;base64,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";
+let editingQuoteId = null;
+function qFmtMoney(n){ n = Number(n)||0; return '₹' + n.toLocaleString('en-IN',{maximumFractionDigits:0}); }
+function quoteDefaults(){
+  // STATE.settings.quotationDefaults comes from the server; deep-clone so edits
+  // in the form never mutate the shared defaults object.
+  return JSON.parse(JSON.stringify(STATE.settings.quotationDefaults || {}));
+}
+function allCompanies(){
+  const s = new Set();
+  STATE.leads.forEach(l=>{ if(l.company) s.add(l.company); });
+  STATE.quotations.forEach(q=>{ if(q.company) s.add(q.company); });
+  return Array.from(s).sort();
+}
+function nextDocId(){
+  const d = STATE.settings.quotationDefaults || {};
+  const prefix = d.docPrefix || 'BZ-JO';
+  const year = new Date().getFullYear();
+  const countThisYear = STATE.quotations.filter(q=>String(q.docId||'').includes(String(year))).length;
+  return `${prefix}-${year}-${countThisYear+1}`;
+}
+function addDaysISO(dateStr, days){
+  const d = dateStr ? new Date(dateStr) : new Date();
+  d.setDate(d.getDate() + Number(days||0));
+  return d.toISOString().slice(0,10);
+}
+
+function renderQuoteList(){
+  const c = document.getElementById('quoteContent');
+  const rows = STATE.quotations.slice().sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  c.innerHTML = `
+    <div class="quote-toolbar">
+      <div>
+        <h2 style="font-size:16px;">Quotations</h2>
+        <div style="font-size:12px;color:var(--slate-soft);">Pick a company, check the pricing, then save &amp; print/PDF. Prices default from Admin &gt; Quotation Defaults but are editable per quote.</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        ${isAdmin() ? `<button class="btn btn-light btn-sm" id="quoteDefaultsBtn">⚙ Default Pricing</button>` : ''}
+        <button class="btn btn-primary btn-sm" id="newQuoteBtn">+ New Quotation</button>
+      </div>
+    </div>
+    ${rows.length ? `<div class="quote-cards">${rows.map(q=>renderQuoteCard(q)).join('')}</div>`
+      : `<div class="empty"><h3>No quotations yet</h3><div>Create your first one for a company above.</div></div>`}
+  `;
+  document.getElementById('newQuoteBtn').addEventListener('click', ()=> openQuoteModal(null));
+  const defBtn = document.getElementById('quoteDefaultsBtn');
+  if(defBtn) defBtn.addEventListener('click', openQuoteDefaultsModal);
+  c.querySelectorAll('.quote-card').forEach(card=>{
+    card.addEventListener('click', ()=> openQuoteModal(card.dataset.id));
+  });
+}
+function renderQuoteCard(q){
+  const total = computeQuoteTotal(q);
+  const pkg = (q.packages||[])[q.chosenPackageIdx] || (q.packages||[])[0];
+  return `
+    <div class="quote-card" data-id="${q.id}">
+      <h4>${esc(q.company)}</h4>
+      <div class="qmeta">${esc(q.docId||'')} · ${fmtDate(q.issueDate)}</div>
+      <div class="qmeta">${pkg ? esc(pkg.name)+' package' : 'No package selected'}${q.validTill ? ' · valid till '+fmtDate(q.validTill) : ''}</div>
+      ${q.logs && q.logs.length>1 ? `<div class="card-logbadge">🕐 ${q.logs.length} updates</div>` : ''}
+      <div class="qtotal">${qFmtMoney(total.grand)}</div>
+    </div>
+  `;
+}
+
+function computeQuoteTotal(q){
+  const pkg = (q.packages||[])[q.chosenPackageIdx];
+  const pkgPrice = pkg ? Number(pkg.price)||0 : 0;
+  const implTotal = (Number(q.implementationCostPerDay)||0) * (Number(q.implementationDays)||0);
+  const scannerTotal = (q.scanners||[]).filter(s=>s.include).reduce((sum,s)=> sum + (Number(s.price)||0) * (Number(s.qty)||0), 0);
+  const subtotal = pkgPrice + implTotal + scannerTotal;
+  const gstPct = Number(q.gstPct)||0;
+  // Package price in the template already reads "+ GST"; scanners are marked
+  // inc. GST. To keep this simple and transparent we apply GST only to the
+  // package + implementation portion, matching how the template phrases it.
+  const gstAmount = (pkgPrice + implTotal) * (gstPct/100);
+  const grand = subtotal + gstAmount;
+  return { pkgPrice, implTotal, scannerTotal, gstAmount, subtotal, grand };
+}
+
+function openQuoteModal(id, draftOverride){
+  editingQuoteId = id || null;
+  const existing = id ? STATE.quotations.find(q=>q.id===id) : null;
+  const d = quoteDefaults();
+  const q = draftOverride ? draftOverride : (existing ? JSON.parse(JSON.stringify(existing)) : {
+    company: '', contactName: '', contactPhone: '', contactEmail: '', leadId: '',
+    docId: nextDocId(), version: 'V.1.0', issueDate: todayISO(), validTill: addDaysISO(todayISO(), d.validityDays||15),
+    gstPct: d.gstPct ?? 18,
+    modules: d.modules || [], addOns: d.addOns || [], packages: (d.packages||[]).map(p=>({...p, qty:1})),
+    implementationCostPerDay: d.implementationCostPerDay || 0, implementationDays: 5,
+    scanners: (d.scanners||[]).map(s=>({...s, qty: 0})),
+    scannerRequirements: { inward: 1, packing: 2, dispatch: 1 },
+    paymentTerms: d.paymentTerms || '', assumptions: d.assumptions || [], exclusions: d.exclusions || [],
+    notes: '', chosenPackageIdx: (d.packages||[]).findIndex(p=>p.recommended) >= 0 ? (d.packages||[]).findIndex(p=>p.recommended) : 0,
+  });
+  // Backfill in case a saved quote predates a field (e.g. opened after defaults changed shape)
+  if(!q.scannerRequirements) q.scannerRequirements = { inward:1, packing:2, dispatch:1 };
+  if(q.chosenPackageIdx===undefined || q.chosenPackageIdx===null) q.chosenPackageIdx = 0;
+
+  document.getElementById('quoteModalTitle').textContent = q.company ? `Quotation — ${q.company}` : 'New Quotation';
+  document.getElementById('deleteQuoteBtn').style.display = existing ? 'inline-flex' : 'none';
+  document.getElementById('downloadDocxBtn').style.display = 'inline-flex';
+
+  const companyOpts = allCompanies();
+  const body = document.getElementById('quoteModalBody');
+  body.innerHTML = `
+    <div class="form-section qsection">
+      <h4>Company &amp; Document</h4>
+      <div class="form-grid">
+        ${fieldRow('Company', `<input type="text" id="q_company" list="quoteCompanyList" placeholder="Pick existing or type a new company name" value="${esc(q.company)}"><datalist id="quoteCompanyList">${companyOpts.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`)}
+        ${fieldRow('Document ID', `<input type="text" id="q_docId" value="${esc(q.docId)}">`)}
+        ${fieldRow('Version', `<input type="text" id="q_version" value="${esc(q.version||'V.1.0')}">`)}
+        ${fieldRow('Contact Person', `<input type="text" id="q_contactName" value="${esc(q.contactName||'')}">`)}
+        ${fieldRow('Contact Phone', `<input type="tel" id="q_contactPhone" value="${esc(q.contactPhone||'')}">`)}
+        ${fieldRow('Issue Date', `<input type="date" id="q_issueDate" value="${q.issueDate||''}">`)}
+        ${fieldRow('Valid Till', `<input type="date" id="q_validTill" value="${q.validTill||''}">`)}
+        ${fieldRow('GST %', `<input type="number" id="q_gstPct" min="0" max="28" step="0.1" value="${q.gstPct}">`)}
+      </div>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Modules included (Project Scope)</h4>
+      <div id="q_modules">${(q.modules||[]).map((m,i)=>`
+        <div class="qmodrow">
+          <input type="checkbox" class="qm_include" data-i="${i}" ${m.include!==false?'checked':''}>
+          <div class="fgroup"><input type="text" class="qm_title" data-i="${i}" value="${esc(m.title)}" placeholder="Module title"></div>
+          <div class="fgroup full" style="flex:2;"><input type="text" class="qm_desc" data-i="${i}" value="${esc(m.desc)}" placeholder="Description shown on the quotation"></div>
+        </div>
+      `).join('')}</div>
+      <button class="btn btn-light btn-sm" id="q_addModule" style="margin-top:8px;">+ Add module</button>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Scope covered (Inward / Outward / Add-Ons)</h4>
+      <div id="q_addons">${(q.addOns||[]).map((a,i)=>`
+        <div class="qmodrow">
+          <input type="checkbox" class="qa_include" data-i="${i}" ${a.include!==false?'checked':''}>
+          <div class="fgroup full"><input type="text" class="qa_title" data-i="${i}" value="${esc(a.title)}"></div>
+        </div>
+      `).join('')}</div>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Packages — all prices editable, tick "Chosen" for the one this quote totals up</h4>
+      <div class="qrow-head"><span></span><span>Package</span><span>Spec (machines/users/storage)</span><span>Price</span><span>Recommended</span><span>Include</span><span>Chosen</span></div>
+      <div id="q_packages">${(q.packages||[]).map((p,i)=>`
+        <div class="qrow">
+          <span></span>
+          <input type="text" class="qp_name" data-i="${i}" value="${esc(p.name)}">
+          <div style="display:flex; gap:3px;">
+            <input type="number" class="qp_machines" data-i="${i}" value="${p.machines??''}" title="Machines" style="width:32%;">
+            <input type="number" class="qp_users" data-i="${i}" value="${p.users??''}" title="Users" style="width:32%;">
+            <input type="text" class="qp_storage" data-i="${i}" value="${esc(p.storage??'')}" title="Storage" style="width:34%;">
+          </div>
+          <input type="number" class="qp_price" data-i="${i}" value="${p.price}" min="0">
+          <div class="pkg-radio"><input type="radio" name="qp_recommended" class="qp_recommended" data-i="${i}" ${p.recommended?'checked':''}></div>
+          <div class="pkg-radio"><input type="checkbox" class="qp_include" data-i="${i}" ${p.include!==false?'checked':''}></div>
+          <div class="pkg-radio"><input type="radio" name="qp_chosen" class="qp_chosen" data-i="${i}" ${q.chosenPackageIdx==i?'checked':''}></div>
+        </div>
+      `).join('')}</div>
+      <button class="btn btn-light btn-sm" id="q_addPackage" style="margin-top:8px;">+ Add package</button>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Implementation</h4>
+      <div class="form-grid">
+        ${fieldRow('Implementation Cost / Day', `<input type="number" id="q_implCost" min="0" value="${q.implementationCostPerDay}">`)}
+        ${fieldRow('Estimated Days', `<input type="number" id="q_implDays" min="0" value="${q.implementationDays}">`)}
+      </div>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Android Mobile Scanners</h4>
+      <div id="q_scanners">${(q.scanners||[]).map((s,i)=>`
+        <div class="qscanrow">
+          <input type="checkbox" class="qs_include" data-i="${i}" ${s.include!==false?'checked':''}>
+          <input type="text" class="qs_name" data-i="${i}" value="${esc(s.name)}">
+          <input type="number" class="qs_price" data-i="${i}" value="${s.price}" min="0" placeholder="Price">
+          <input type="number" class="qs_qty" data-i="${i}" value="${s.qty??0}" min="0" placeholder="Qty">
+        </div>
+      `).join('')}</div>
+      <button class="btn btn-light btn-sm" id="q_addScanner" style="margin-top:8px;">+ Add scanner option</button>
+      <div class="form-grid" style="margin-top:12px;">
+        ${fieldRow('Scanners needed — Inward', `<input type="number" id="q_scanInward" min="0" value="${q.scannerRequirements.inward}">`)}
+        ${fieldRow('Scanners needed — Packing', `<input type="number" id="q_scanPacking" min="0" value="${q.scannerRequirements.packing}">`)}
+        ${fieldRow('Scanners needed — Dispatch', `<input type="number" id="q_scanDispatch" min="0" value="${q.scannerRequirements.dispatch}">`)}
+      </div>
+    </div>
+
+    <div class="form-section qsection">
+      <h4>Payment terms &amp; notes</h4>
+      <div class="form-grid">
+        ${fieldRow('Payment Terms', `<textarea id="q_paymentTerms" rows="2">${esc(q.paymentTerms)}</textarea>`, true)}
+        ${fieldRow('Additional Notes (optional, shown on quotation)', `<textarea id="q_notes" rows="2">${esc(q.notes||'')}</textarea>`, true)}
+      </div>
+    </div>
+
+    <div class="quote-total-box" id="q_totalBox"></div>
+
+    ${existing && q.logs && q.logs.length ? `
+    <div class="form-section qsection">
+      <h4>Update History ${q.logs.length>1?`(${q.logs.length} updates)`:''}</h4>
+      ${q.logs.length>1 ? `
+        <select id="q_logPicker" style="margin-bottom:8px;">
+          ${q.logs.slice().reverse().map((log,i)=>`<option value="${q.logs.length-1-i}">${fmtLogWhen(log.at)} — ${esc(log.by)}${log.changes&&log.changes.length?` (${log.changes.join(', ')})`:''}</option>`).join('')}
+        </select>
+      ` : ''}
+      <div id="q_logDetail" class="log-detail"></div>
+    </div>
+    ` : ''}
+  `;
+
+  function renderQuoteLogDetail(){
+    const detailEl = document.getElementById('q_logDetail');
+    if(!detailEl) return;
+    const picker = document.getElementById('q_logPicker');
+    const idx = picker ? Number(picker.value) : (q.logs.length-1);
+    const log = q.logs[idx];
+    if(!log){ detailEl.innerHTML=''; return; }
+    detailEl.innerHTML = `
+      <div class="log-detail-meta">${fmtLogWhen(log.at)} · ${esc(log.by)}</div>
+      ${log.changes&&log.changes.length ? `<div class="log-detail-changes">Changed: ${log.changes.map(esc).join(', ')}</div>` : (log.note?`<div class="log-detail-changes">${esc(log.note)}</div>`:'')}
+    `;
+  }
+  if(existing && q.logs && q.logs.length){
+    renderQuoteLogDetail();
+    document.getElementById('q_logPicker')?.addEventListener('change', renderQuoteLogDetail);
+  }
+
+  function recalcTotalPreview(){
+    const draft = collectQuoteForm(true);
+    const t = computeQuoteTotal(draft);
+    document.getElementById('q_totalBox').innerHTML = `
+      <div class="qt-row"><span>Chosen package</span><span>${qFmtMoney(t.pkgPrice)}</span></div>
+      <div class="qt-row"><span>Implementation (${draft.implementationDays||0} days × ${qFmtMoney(draft.implementationCostPerDay)})</span><span>${qFmtMoney(t.implTotal)}</span></div>
+      <div class="qt-row"><span>Scanners</span><span>${qFmtMoney(t.scannerTotal)}</span></div>
+      <div class="qt-row"><span>GST (${draft.gstPct||0}% on package + implementation)</span><span>${qFmtMoney(t.gstAmount)}</span></div>
+      <div class="qt-grand"><span>Total Estimated Investment</span><span>${qFmtMoney(t.grand)}</span></div>
+    `;
+  }
+  body.addEventListener('input', recalcTotalPreview);
+  body.addEventListener('change', recalcTotalPreview);
+  recalcTotalPreview();
+
+  document.getElementById('q_addModule').addEventListener('click', ()=>{
+    addQuoteRowAndRerender('modules', {title:'', desc:'', include:true});
+  });
+  document.getElementById('q_addPackage').addEventListener('click', ()=>{
+    addQuoteRowAndRerender('packages', {name:'Custom', price:0, machines:'', users:'', storage:'', recommended:false, include:true, qty:1});
+  });
+  document.getElementById('q_addScanner').addEventListener('click', ()=>{
+    addQuoteRowAndRerender('scanners', {name:'New scanner option', price:0, include:true, qty:0});
+  });
+
+  document.getElementById('quoteModalBg').classList.add('open');
+  document.getElementById('quoteModalBg')._newQuote = draftOverride ? document.getElementById('quoteModalBg')._newQuote : !existing;
+  document.getElementById('quoteModalBg')._draftId = draftOverride ? draftOverride.id : (q.id || null);
+  document.getElementById('quoteModalBg')._isDefaultsForm = false;
+}
+// "+ Add row" buttons need to re-render the form with a fresh row while
+// keeping everything already typed — collect the current form values fresh
+// from the DOM first (so nothing typed is lost), append the new row to that,
+// then reopen the modal from that in-memory draft.
+function addQuoteRowAndRerender(arrayField, newRow){
+  const draftId = document.getElementById('quoteModalBg')._draftId;
+  const collected = collectQuoteForm();
+  collected[arrayField] = [...collected[arrayField], newRow];
+  collected.id = draftId;
+  openQuoteModal(draftId, collected);
+}
+
+function collectQuoteForm(silent){
+  const modules = Array.from(document.querySelectorAll('#q_modules .qmodrow')).map((row,i)=>({
+    title: row.querySelector('.qm_title').value.trim(),
+    desc: row.querySelector('.qm_desc').value.trim(),
+    include: row.querySelector('.qm_include').checked,
+  }));
+  const addOns = Array.from(document.querySelectorAll('#q_addons .qmodrow')).map(row=>({
+    title: row.querySelector('.qa_title').value.trim(),
+    include: row.querySelector('.qa_include').checked,
+  }));
+  const packages = Array.from(document.querySelectorAll('#q_packages .qrow')).map(row=>({
+    name: row.querySelector('.qp_name').value.trim(),
+    price: Number(row.querySelector('.qp_price').value)||0,
+    machines: row.querySelector('.qp_machines').value,
+    users: row.querySelector('.qp_users').value,
+    storage: row.querySelector('.qp_storage').value,
+    recommended: row.querySelector('.qp_recommended').checked,
+    include: row.querySelector('.qp_include').checked,
+  }));
+  let chosenPackageIdx = 0;
+  document.querySelectorAll('.qp_chosen').forEach((r,i)=>{ if(r.checked) chosenPackageIdx = i; });
+  const scanners = Array.from(document.querySelectorAll('#q_scanners .qscanrow')).map(row=>({
+    name: row.querySelector('.qs_name').value.trim(),
+    price: Number(row.querySelector('.qs_price').value)||0,
+    qty: Number(row.querySelector('.qs_qty').value)||0,
+    include: row.querySelector('.qs_include').checked,
+  }));
+  return {
+    company: document.getElementById('q_company').value.trim(),
+    docId: document.getElementById('q_docId').value.trim(),
+    version: document.getElementById('q_version').value.trim(),
+    contactName: document.getElementById('q_contactName').value.trim(),
+    contactPhone: document.getElementById('q_contactPhone').value.trim(),
+    issueDate: document.getElementById('q_issueDate').value,
+    validTill: document.getElementById('q_validTill').value,
+    gstPct: Number(document.getElementById('q_gstPct').value)||0,
+    modules, addOns, packages, chosenPackageIdx,
+    implementationCostPerDay: Number(document.getElementById('q_implCost').value)||0,
+    implementationDays: Number(document.getElementById('q_implDays').value)||0,
+    scanners,
+    scannerRequirements: {
+      inward: Number(document.getElementById('q_scanInward').value)||0,
+      packing: Number(document.getElementById('q_scanPacking').value)||0,
+      dispatch: Number(document.getElementById('q_scanDispatch').value)||0,
+    },
+    paymentTerms: document.getElementById('q_paymentTerms').value.trim(),
+    notes: document.getElementById('q_notes').value.trim(),
+  };
+}
+
+async function saveQuote(){
+  const data = collectQuoteForm();
+  if(!data.company){ showToast('Enter a company name'); return null; }
+  const isNew = document.getElementById('quoteModalBg')._newQuote;
+  const id = document.getElementById('quoteModalBg')._draftId;
+  try{
+    if(isNew){
+      const { quotation } = await api('/quotations', { method:'POST', body: JSON.stringify(data) });
+      STATE.quotations.push(quotation);
+      document.getElementById('quoteModalBg')._newQuote = false;
+      document.getElementById('quoteModalBg')._draftId = quotation.id;
+      return quotation;
+    } else {
+      const { quotation } = await api(`/quotations/${id}`, { method:'PATCH', body: JSON.stringify(data) });
+      const idx = STATE.quotations.findIndex(q=>q.id===id);
+      STATE.quotations[idx] = quotation;
+      return quotation;
+    }
+  }catch(err){ showToast(err.message); return null; }
+}
+document.getElementById('saveQuoteBtn').addEventListener('click', async ()=>{
+  if(document.getElementById('quoteModalBg')._isDefaultsForm){
+    const ok = await saveQuoteDefaultsFromForm();
+    if(ok) closeQuoteModal();
+    return;
+  }
+  const saved = await saveQuote();
+  if(!saved) return;
+  showToast('Quotation saved');
+  closeQuoteModal();
+  renderQuoteList();
+});
+document.getElementById('printQuoteBtn').addEventListener('click', async ()=>{
+  if(document.getElementById('quoteModalBg')._isDefaultsForm){
+    await saveQuoteDefaultsFromForm();
+    return;
+  }
+  const saved = await saveQuote();
+  if(!saved) return;
+  renderQuoteList();
+  printQuote(saved);
+});
+document.getElementById('downloadDocxBtn').addEventListener('click', async ()=>{
+  const saved = await saveQuote();
+  if(!saved) return;
+  renderQuoteList();
+  try{
+    const res = await fetch('/api/quotations/'+saved.id+'/docx', { headers: { 'Authorization': 'Bearer '+authToken } });
+    if(!res.ok) throw new Error('Could not generate the Word document');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (saved.docId || saved.company || 'quotation') + '.docx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    closeQuoteModal();
+  }catch(err){ showToast(err.message); }
+});
+document.getElementById('deleteQuoteBtn').addEventListener('click', async ()=>{
+  const id = document.getElementById('quoteModalBg')._draftId;
+  if(!id) return;
+  if(!confirm('Delete this quotation permanently?')) return;
+  try{ await api(`/quotations/${id}`, { method:'DELETE' }); }
+  catch(err){ showToast(err.message); return; }
+  STATE.quotations = STATE.quotations.filter(q=>q.id!==id);
+  closeQuoteModal();
+  renderQuoteList();
+  showToast('Quotation deleted');
+});
+function closeQuoteModal(){ document.getElementById('quoteModalBg').classList.remove('open'); editingQuoteId = null; }
+document.getElementById('quoteModalClose').addEventListener('click', closeQuoteModal);
+document.getElementById('cancelQuoteBtn').addEventListener('click', closeQuoteModal);
+
+function printQuote(q){
+  const fromCompany = (STATE.settings.quotationDefaults && STATE.settings.quotationDefaults.fromCompany) || 'Bizonet Technology Solutions';
+  const modules = (q.modules||[]).filter(m=>m.include!==false);
+  const addOns = (q.addOns||[]).filter(a=>a.include!==false);
+  const packages = (q.packages||[]).filter(p=>p.include!==false);
+  const scanners = (q.scanners||[]).filter(s=>s.include!==false);
+  const todayLong = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'});
+
+  // Fees & Payment Terms is one running numbered list in the source document:
+  // Inward / Outward / Add-Ons, then each package with its price, then
+  // Implementation Cost, then each scanner option.
+  const feeItems = [];
+  addOns.forEach(a=> feeItems.push(esc(a.title)));
+  packages.forEach(p=> feeItems.push(`<b>${esc(p.name)} Package — ${qFmtMoney(p.price)} + GST</b> (${esc(String(p.machines??''))} Machine, ${esc(String(p.users??''))} User CPU Cycles, ${esc(String(p.storage??''))} Storage)${p.recommended?' <span class="qdoc-rec">(Recommended considering your load)</span>':''}`));
+  feeItems.push(`<b>Implementation Cost</b> — ${qFmtMoney(q.implementationCostPerDay)}/Day`);
+  scanners.forEach(s=> feeItems.push(`<b>${esc(s.name)}</b> — ${qFmtMoney(s.price)}${String(s.name||'').toLowerCase().includes('inc')?'':'/-'}`));
+
+  const html = `
+    <div class="qdoc">
+      <div class="cover">
+        <div class="qdoc-topline">CONFIDENTIAL</div>
+        <img src="${BIZONET_LOGO_DATA_URI}" alt="logo">
+        <div class="brand-line">${esc(fromCompany)}</div>
+        <div class="cover-mid">
+          <h1>WAREHOUSE MANAGEMENT SOLUTION FOR</h1>
+          <h2>${esc(q.company).toUpperCase()}</h2>
+        </div>
+        <div class="cover-meta">
+          Version:- ${esc(q.version||'V.1.0')}<br>
+          ${todayLong}
+        </div>
+      </div>
+
+      <h1>Document Control</h1>
+      <h2>Document Information</h2>
+      <table>
+        <tr><th>Document Id</th><td>${esc(q.docId||'')}</td></tr>
+        <tr><th>Document Owner</th><td>${esc(fromCompany)}</td></tr>
+        <tr><th>Prepared For</th><td>${esc(q.company)}${q.contactName?` (Attn: ${esc(q.contactName)})`:''}${q.contactPhone?`, ${esc(q.contactPhone)}`:''}</td></tr>
+        <tr><th>Issue Date</th><td>${fmtDate(q.issueDate)}</td></tr>
+        <tr><th>Last Saved Date</th><td>${fmtDate(q.issueDate)}</td></tr>
+        <tr><th>File Name</th><td>${esc(fromCompany)}- ${esc(q.company)}</td></tr>
+      </table>
+      <h2>Document History</h2>
+      <table>
+        <tr><th>Version</th><th>Issue Date</th><th>Changes</th></tr>
+        <tr><td>${esc(q.version||'V.1.0')}</td><td>${fmtDate(q.issueDate)}</td><td>NA</td></tr>
+      </table>
+
+      <h1>Project Scope Definition</h1>
+      <p>Build, Implement and Maintain a Product Management Solution and all core modules (listed below) to manage the store inventory, store in and material management for the Company "${esc(q.company)}". A platform will also be provided for the project to store and maintain all the data related to the project.</p>
+      <p>The following Core Modules will be provided for generic implementation of the solution.</p>
+      <ol>${modules.map(m=>`<li><b>${esc(m.title)}</b> — ${esc(m.desc)}</li>`).join('')}</ol>
+      <blockquote>First onsite training for using the system will be given to the Client. After the implementation, the training can be provided remotely. ${esc(fromCompany)} Team will provide the required remote service for the period of one year after the implementation of the product.</blockquote>
+
+      ${(q.assumptions&&q.assumptions.length) ? `<h1>Project Assumptions and Constraints</h1><ol>${q.assumptions.map(a=>`<li>${esc(a)}</li>`).join('')}</ol>` : ''}
+      ${(q.exclusions&&q.exclusions.length) ? `<h1>Project Exclusions</h1><ol>${q.exclusions.map(a=>`<li>${esc(a)}</li>`).join('')}</ol>` : ''}
+
+      <h1>Project Fees &amp; Payment Terms</h1>
+      <p>Cost of the modules depend on your needs. Additional applicable tax rates will apply.</p>
+      <ol>${feeItems.map(li=>`<li>${li}</li>`).join('')}</ol>
+      <ul class="qdoc-dash">
+        <li>The above packages are inclusive of onsite training at given price, cloud infrastructure cost and Support required by your team.</li>
+      </ul>
+      <blockquote>The final price of the product will be determined based on your needs and benefits passed on to you via negotiations. A copy of agreed terms and conditions will be rolled out on confirmation of both the parties.</blockquote>
+      <p>${esc(q.paymentTerms||'')}</p>
+      <p class="qdoc-italic">Please note the above quotation is valid till ${fmtDate(q.validTill)}.</p>
+
+      <h1>Scanner Requirements</h1>
+      <p class="qdoc-italic">Based on our understanding of your business, we can recommend you to have ${q.scannerRequirements.inward||0} scanner(s) for inward and ${q.scannerRequirements.packing||0} scanner(s) for your packing and ${q.scannerRequirements.dispatch||0} scanner(s) for dispatch purpose.</p>
+
+      ${q.notes ? `<h1>Additional Notes</h1><p>${esc(q.notes)}</p>` : ''}
+
+      <div class="qdoc-foot"><span>CONFIDENTIAL</span><span>${esc(q.docId||'')}</span></div>
+    </div>
+  `;
+  document.getElementById('quotePrintArea').innerHTML = html;
+  closeQuoteModal();
+  setTimeout(()=> window.print(), 80);
+}
+
+/* ---- Admin > Quotation Defaults ---- */
+function openQuoteDefaultsModal(){
+  if(!isAdmin()) return;
+  const d = quoteDefaults();
+  document.getElementById('quoteModalTitle').textContent = 'Quotation Defaults (applies to new quotations)';
+  document.getElementById('deleteQuoteBtn').style.display = 'none';
+  document.getElementById('downloadDocxBtn').style.display = 'none';
+  const body = document.getElementById('quoteModalBody');
+  body.innerHTML = `
+    <div class="form-section qsection">
+      <h4>General</h4>
+      <div class="form-grid">
+        ${fieldRow('Our Company Name', `<input type="text" id="d_fromCompany" value="${esc(d.fromCompany||'')}">`)}
+        ${fieldRow('Document ID Prefix', `<input type="text" id="d_docPrefix" value="${esc(d.docPrefix||'')}">`)}
+        ${fieldRow('Default GST %', `<input type="number" id="d_gstPct" value="${d.gstPct??18}">`)}
+        ${fieldRow('Default Validity (days)', `<input type="number" id="d_validityDays" value="${d.validityDays??15}">`)}
+      </div>
+    </div>
+    <div class="form-section qsection">
+      <h4>Default Package Pricing</h4>
+      <div class="qrow-head"><span></span><span>Package</span><span>Spec</span><span>Price</span><span>Recommended</span><span>Include</span><span></span></div>
+      <div id="d_packages">${(d.packages||[]).map((p,i)=>`
+        <div class="qrow">
+          <span></span>
+          <input type="text" class="dp_name" data-i="${i}" value="${esc(p.name)}">
+          <div style="display:flex; gap:3px;">
+            <input type="number" class="dp_machines" data-i="${i}" value="${p.machines??''}" style="width:32%;">
+            <input type="number" class="dp_users" data-i="${i}" value="${p.users??''}" style="width:32%;">
+            <input type="text" class="dp_storage" data-i="${i}" value="${esc(p.storage??'')}" style="width:34%;">
+          </div>
+          <input type="number" class="dp_price" data-i="${i}" value="${p.price}" min="0">
+          <div class="pkg-radio"><input type="radio" name="dp_recommended" class="dp_recommended" data-i="${i}" ${p.recommended?'checked':''}></div>
+          <div class="pkg-radio"><input type="checkbox" class="dp_include" data-i="${i}" ${p.include!==false?'checked':''}></div>
+          <span></span>
+        </div>
+      `).join('')}</div>
+    </div>
+    <div class="form-section qsection">
+      <h4>Implementation &amp; Scanners</h4>
+      <div class="form-grid">
+        ${fieldRow('Implementation Cost / Day', `<input type="number" id="d_implCost" value="${d.implementationCostPerDay||0}">`)}
+      </div>
+      <div id="d_scanners" style="margin-top:8px;">${(d.scanners||[]).map((s,i)=>`
+        <div class="qscanrow">
+          <input type="checkbox" class="ds_include" data-i="${i}" ${s.include!==false?'checked':''}>
+          <input type="text" class="ds_name" data-i="${i}" value="${esc(s.name)}">
+          <input type="number" class="ds_price" data-i="${i}" value="${s.price}" min="0">
+          <span></span>
+        </div>
+      `).join('')}</div>
+    </div>
+    <div class="form-section qsection">
+      <h4>Default Modules (Project Scope text)</h4>
+      <div id="d_modules">${(d.modules||[]).map((m,i)=>`
+        <div class="qmodrow">
+          <input type="checkbox" class="dm_include" data-i="${i}" ${m.include!==false?'checked':''}>
+          <div class="fgroup"><input type="text" class="dm_title" data-i="${i}" value="${esc(m.title)}"></div>
+          <div class="fgroup full" style="flex:2;"><input type="text" class="dm_desc" data-i="${i}" value="${esc(m.desc)}"></div>
+        </div>
+      `).join('')}</div>
+    </div>
+    <div class="form-section qsection">
+      <h4>Default Payment Terms</h4>
+      <div class="form-grid">${fieldRow('Payment Terms', `<textarea id="d_paymentTerms" rows="2">${esc(d.paymentTerms||'')}</textarea>`, true)}</div>
+    </div>
+  `;
+  document.getElementById('quoteModalBg').classList.add('open');
+  document.getElementById('quoteModalBg')._newQuote = false;
+  document.getElementById('quoteModalBg')._draftId = null;
+  document.getElementById('quoteModalBg')._isDefaultsForm = true;
+}
+async function saveQuoteDefaultsFromForm(){
+  const packages = Array.from(document.querySelectorAll('#d_packages .qrow')).map(row=>({
+    name: row.querySelector('.dp_name').value.trim(),
+    price: Number(row.querySelector('.dp_price').value)||0,
+    machines: row.querySelector('.dp_machines').value,
+    users: row.querySelector('.dp_users').value,
+    storage: row.querySelector('.dp_storage').value,
+    recommended: row.querySelector('.dp_recommended').checked,
+    include: row.querySelector('.dp_include').checked,
+  }));
+  const scanners = Array.from(document.querySelectorAll('#d_scanners .qscanrow')).map(row=>({
+    name: row.querySelector('.ds_name').value.trim(),
+    price: Number(row.querySelector('.ds_price').value)||0,
+    include: row.querySelector('.ds_include').checked,
+  }));
+  const modules = Array.from(document.querySelectorAll('#d_modules .qmodrow')).map(row=>({
+    title: row.querySelector('.dm_title').value.trim(),
+    desc: row.querySelector('.dm_desc').value.trim(),
+    include: row.querySelector('.dm_include').checked,
+  }));
+  const d = quoteDefaults();
+  const quotationDefaults = {
+    ...d,
+    fromCompany: document.getElementById('d_fromCompany').value.trim(),
+    docPrefix: document.getElementById('d_docPrefix').value.trim(),
+    gstPct: Number(document.getElementById('d_gstPct').value)||0,
+    validityDays: Number(document.getElementById('d_validityDays').value)||15,
+    packages, scanners, modules,
+    implementationCostPerDay: Number(document.getElementById('d_implCost').value)||0,
+    paymentTerms: document.getElementById('d_paymentTerms').value.trim(),
+  };
+  try{
+    const { settings } = await api('/settings', { method:'PUT', body: JSON.stringify({ quotationDefaults }) });
+    STATE.settings = settings;
+    showToast('Default pricing updated');
+  }catch(err){ showToast(err.message); return false; }
+  return true;
+}
+
+/* ============================= LEAD LOG (TABLE) ============================= */
+const LOG_COLS = [
+  {k:'leadName', l:'Lead'}, {k:'company', l:'Company'}, {k:'status', l:'Status'}, {k:'source', l:'Source'},
+  {k:'setterName', l:'Setter'}, {k:'closerName', l:'Closer'}, {k:'dateCreated', l:'Created'},
+  {k:'dateOfMeeting', l:'Meeting'}, {k:'meetingStatus', l:'Meeting Status'}, {k:'offerMade', l:'Offer'},
+  {k:'saleType', l:'Sale Type'}, {k:'lossReason', l:'Loss Reason'}, {k:'depositAmount', l:'Deposit'},
+  {k:'totalDealValue', l:'Deal Value'}, {k:'cashCollected', l:'Collected'}, {k:'earnings', l:'Earnings'},
+  {k:'lastTouchDate', l:'Last Touch'}
+];
+
+let logCategoryFilter = new Set(); // multi-select of STATUSES, empty = all
+function renderLogFilters(){
+  const wrap = document.getElementById('logFilters');
+  const sources = allSources(); const reps = allRepsCombined();
+  wrap.innerHTML = `
+    <div class="fgroup"><label>Search</label><input type="text" id="lf_search" placeholder="Name, company, email..."></div>
+    <div class="fgroup cat-filter-wrap">
+      <label>&nbsp;</label>
+      <button class="btn btn-light btn-sm" id="lf_categoryBtn">Category <span id="lf_categoryCount"></span> ▾</button>
+      <div class="cat-filter-pop" id="lf_categoryPop">
+        ${STATUSES.map(s=>`<label><input type="checkbox" class="lf_catCheck" value="${s}"> ${s}</label>`).join('')}
+        <div class="cat-actions">
+          <button class="btn btn-light btn-sm" id="lf_catAll" type="button">All</button>
+          <button class="btn btn-light btn-sm" id="lf_catNone" type="button">None</button>
+        </div>
+      </div>
+    </div>
+    <div class="fgroup"><label>Rep</label><select id="lf_rep"><option value="">All</option>${reps.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
+    <div class="fgroup"><label>Source</label><select id="lf_source"><option value="">All</option>${sources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
+    <div class="fgroup"><label>From</label><input type="date" id="lf_from"></div>
+    <div class="fgroup"><label>To</label><input type="date" id="lf_to"></div>
+    <div class="fgroup"><label>&nbsp;</label><button class="btn btn-light btn-sm" id="lf_clear">Clear</button></div>
+  `;
+  ['lf_search','lf_rep','lf_source','lf_from','lf_to'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', renderLog);
+    document.getElementById(id).addEventListener('change', renderLog);
+  });
+  const catBtn = document.getElementById('lf_categoryBtn');
+  const catPop = document.getElementById('lf_categoryPop');
+  catBtn.addEventListener('click', (e)=>{ e.stopPropagation(); catPop.classList.toggle('open'); });
+  document.addEventListener('click', (e)=>{ if(!catPop.contains(e.target) && e.target!==catBtn) catPop.classList.remove('open'); });
+  function syncCategoryUI(){
+    wrap.querySelectorAll('.lf_catCheck').forEach(chk=> chk.checked = logCategoryFilter.has(chk.value));
+    const n = logCategoryFilter.size;
+    document.getElementById('lf_categoryCount').textContent = n ? `(${n})` : '';
+  }
+  wrap.querySelectorAll('.lf_catCheck').forEach(chk=>{
+    chk.addEventListener('change', ()=>{
+      if(chk.checked) logCategoryFilter.add(chk.value); else logCategoryFilter.delete(chk.value);
+      syncCategoryUI();
+      renderLog();
+    });
+  });
+  document.getElementById('lf_catAll').addEventListener('click', ()=>{ logCategoryFilter = new Set(STATUSES); syncCategoryUI(); renderLog(); });
+  document.getElementById('lf_catNone').addEventListener('click', ()=>{ logCategoryFilter = new Set(); syncCategoryUI(); renderLog(); });
+  syncCategoryUI();
+  document.getElementById('lf_clear').addEventListener('click', ()=>{
+    ['lf_search','lf_rep','lf_source','lf_from','lf_to'].forEach(id=> document.getElementById(id).value='');
+    logCategoryFilter = new Set();
+    syncCategoryUI();
+    renderLog();
+  });
+}
+function getLogFiltered(){
+  const search = (document.getElementById('lf_search')?.value||'').toLowerCase();
+  const rep = document.getElementById('lf_rep')?.value||'';
+  const source = document.getElementById('lf_source')?.value||'';
+  const from = document.getElementById('lf_from')?.value||'';
+  const to = document.getElementById('lf_to')?.value||'';
+  return STATE.leads.filter(l=>{
+    if(logCategoryFilter.size && !logCategoryFilter.has(l.status)) return false;
+    if(rep && l.setterName!==rep && l.closerName!==rep) return false;
+    if(source && l.source!==source) return false;
+    if(from && l.dateCreated && l.dateCreated < from) return false;
+    if(to && l.dateCreated && l.dateCreated > to) return false;
+    if(search){
+      const hay = [l.leadName,l.company,l.email,l.phone].join(' ').toLowerCase();
+      if(!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+function renderLog(){
+  if(!document.getElementById('logFilters').childElementCount) renderLogFilters();
+  const rows = getLogFiltered().map(l=> Object.assign({}, l, {earnings: earningsFor(l)}));
+  rows.sort((a,b)=>{
+    let va=a[logSort.key], vb=b[logSort.key];
+    if(['depositAmount','totalDealValue','cashCollected','earnings'].includes(logSort.key)){ va=Number(va)||0; vb=Number(vb)||0; }
+    if(va===undefined||va===null) va='';
+    if(vb===undefined||vb===null) vb='';
+    if(va<vb) return logSort.dir==='asc'?-1:1;
+    if(va>vb) return logSort.dir==='asc'?1:-1;
+    return 0;
+  });
+  const thead = document.querySelector('#logTable thead');
+  thead.innerHTML = '<tr>' + LOG_COLS.map(c=>`<th data-key="${c.k}">${c.l}${logSort.key===c.k?(logSort.dir==='asc'?' ▲':' ▼'):''}</th>`).join('') + '</tr>';
+  thead.querySelectorAll('th').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const k = th.dataset.key;
+      if(logSort.key===k) logSort.dir = logSort.dir==='asc'?'desc':'asc'; else { logSort.key=k; logSort.dir='asc'; }
+      renderLog();
+    });
+  });
+  const tbody = document.querySelector('#logTable tbody');
+  if(!rows.length){
+    tbody.innerHTML = `<tr><td colspan="${LOG_COLS.length}"><div class="empty"><h3>No leads match these filters</h3><div>Try clearing filters or add a new lead.</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r=>{
+    const leaks = leadLeaks(r);
+    return '<tr style="cursor:pointer" data-id="'+r.id+'">' + LOG_COLS.map(c=>{
+      let v = r[c.k];
+      if(c.k==='status') return `<td><span class="status-pill" style="background:${STATUS_COLORS[v]}33;color:${STATUS_COLORS[v]}">${v}</span></td>`;
+      if(['depositAmount','totalDealValue','cashCollected','earnings'].includes(c.k)) return `<td>${fmtMoney(v)}</td>`;
+      if(c.k==='dateCreated'||c.k==='lastTouchDate') return `<td>${fmtDate(v)}${c.k==='lastTouchDate'&&leaks.some(f=>f.key==='aging')?' <span class="leak-tag">!</span>':''}</td>`;
+      if(c.k==='dateOfMeeting') return `<td>${fmtMeetingWhen(r)}</td>`;
+      if(c.k==='offerMade') return `<td>${v==='yes'?'Yes':v==='no'?'No':'—'}</td>`;
+      return `<td>${esc(v)||'—'}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+  tbody.querySelectorAll('tr').forEach(tr=> tr.addEventListener('click', ()=> openLeadModal(tr.dataset.id)));
+}
+
+/* ============================= DASHBOARD ============================= */
+function renderDashFilters(){
+  const wrap = document.getElementById('dashFilters');
+  if(wrap.childElementCount) return;
+  const sources = allSources(); const reps = allRepsCombined();
+  wrap.innerHTML = `
+    <div class="fgroup"><label>Rep</label><select id="df_rep"><option value="">All reps</option>${reps.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
+    <div class="fgroup"><label>Source</label><select id="df_source"><option value="">All sources</option>${sources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
+    <div class="fgroup"><label>From</label><input type="date" id="df_from"></div>
+    <div class="fgroup"><label>To</label><input type="date" id="df_to"></div>
+    <div class="fgroup"><label>Revenue Goal ${isAdmin()?'':'(admin only)'}</label><input type="number" id="df_goal" value="${STATE.settings.revenueGoal}" style="width:130px;" ${isAdmin()?'':'disabled'}></div>
+    <div class="fgroup"><label>Commission Base ${isAdmin()?'':'(admin only)'}</label><select id="df_base" ${isAdmin()?'':'disabled'}><option value="cash" ${STATE.settings.commissionBase==='cash'?'selected':''}>Cash Collected</option><option value="deal" ${STATE.settings.commissionBase==='deal'?'selected':''}>Total Deal Value</option></select></div>
+    <div class="fgroup"><label>&nbsp;</label><button class="btn btn-light btn-sm" id="df_clear">Clear filters</button></div>
+  `;
+  ['df_rep','df_source','df_from','df_to'].forEach(id=> document.getElementById(id).addEventListener('change', renderDash));
+  document.getElementById('df_goal').addEventListener('change', async (e)=>{
+    if(!isAdmin()) return;
+    try{ const { settings } = await api('/settings', { method:'PUT', body: JSON.stringify({ revenueGoal: Number(e.target.value)||0 }) }); STATE.settings = settings; }
+    catch(err){ showToast(err.message); }
+    renderDash();
+  });
+  document.getElementById('df_base').addEventListener('change', async (e)=>{
+    if(!isAdmin()) return;
+    try{ const { settings } = await api('/settings', { method:'PUT', body: JSON.stringify({ commissionBase: e.target.value }) }); STATE.settings = settings; }
+    catch(err){ showToast(err.message); }
+    renderDash();
+  });
+  document.getElementById('df_clear').addEventListener('click', ()=>{
+    ['df_rep','df_source','df_from','df_to'].forEach(id=> document.getElementById(id).value='');
+    renderDash();
+  });
+}
+function getDashFiltered(){
+  const rep = document.getElementById('df_rep')?.value||'';
+  const source = document.getElementById('df_source')?.value||'';
+  const from = document.getElementById('df_from')?.value||'';
+  const to = document.getElementById('df_to')?.value||'';
+  const leads = STATE.leads.filter(l=>{
+    if(rep && l.setterName!==rep && l.closerName!==rep) return false;
+    if(source && l.source!==source) return false;
+    if(from && l.dateCreated && l.dateCreated < from) return false;
+    if(to && l.dateCreated && l.dateCreated > to) return false;
+    return true;
+  });
+  const activity = STATE.activity.filter(a=>{
+    if(rep && a.setter!==rep) return false;
+    if(from && a.date < from) return false;
+    if(to && a.date > to) return false;
+    return true;
+  });
+  return {leads, activity};
+}
+
+let lossChart=null;
+function renderDash(){
+  renderDashFilters();
+  const {leads, activity} = getDashFiltered();
+
+  // ---- money metrics ----
+  const deposits = leads.reduce((s,l)=>s+ (Number(l.depositAmount)||0),0);
+  const wonLeads = leads.filter(l=>l.status==='Won');
+  const totalSales = wonLeads.reduce((s,l)=>s+(Number(l.totalDealValue)||0),0);
+  const cashCollected = leads.reduce((s,l)=>s+(Number(l.cashCollected)||0),0);
+  const refunds = leads.reduce((s,l)=>s+(Number(l.refundAmount)||0),0);
+  const netRevenue = cashCollected - refunds;
+  const depositLeads = leads.filter(l=> Number(l.depositAmount)>0);
+  const paidInFullCount = depositLeads.filter(l=> l.datePaidInFull).length;
+  const depositToPIF = depositLeads.length ? (paidInFullCount/depositLeads.length*100) : null;
+  const daysToCollect = avg(depositLeads.filter(l=>l.datePaidInFull).map(l=> daysBetween(l.dateOfMeeting||l.dateCreated, l.datePaidInFull)));
+  const goal = STATE.settings.revenueGoal||0;
+  const goalPct = goal>0 ? (netRevenue/goal*100) : null;
+
+  // ---- setter metrics ----
+  const setters = allReps('setterName').filter(s=> leads.some(l=>l.setterName===s) || activity.some(a=>a.setter===s));
+  const setterRows = setters.map(name=>{
+    const mine = leads.filter(l=>l.setterName===name);
+    const act = activity.filter(a=>a.setter===name);
+    const dials = act.reduce((s,a)=>s+a.dials,0);
+    const dms = act.reduce((s,a)=>s+a.dms,0);
+    const conv = act.reduce((s,a)=>s+a.conversations,0);
+    const booked = mine.filter(l=>l.dateMeetingBooked).length;
+    const convToBooked = conv>0 ? (booked/conv*100) : null;
+    const speedToLead = avg(mine.map(l=> minutesBetween(l.dateCreated, l.firstContactDateTime)));
+    const bookingLag = avg(mine.map(l=> bookingLagDays(l)));
+    const scheduled = mine.filter(l=>l.dateOfMeeting).length;
+    const taken = mine.filter(l=>l.meetingStatus==='Show').length;
+    const declines = mine.filter(l=>l.meetingStatus==='Cancel').length;
+    const cancels = mine.filter(l=>l.meetingStatus==='Rescheduled By Them'||l.meetingStatus==='Rescheduled By Us').length;
+    const noshows = mine.filter(l=>l.meetingStatus==='No-Show').length;
+    const occurred = mine.filter(l=> l.meetingStatus==='Show' || l.meetingStatus==='No-Show').length;
+    const showRate = occurred>0 ? (taken/occurred*100) : null;
+    const dqs = mine.filter(l=>l.meetingStatus==='DQ').length;
+    const dqRate = scheduled>0 ? (dqs/scheduled*100): null;
+    return {name,dials,dms,conv,convToBooked,speedToLead,bookingLag,scheduled,taken,declines,cancels,noshows,showRate,dqRate};
+  });
+
+  // ---- closer metrics ----
+  const closers = allReps('closerName').filter(c=> leads.some(l=>l.closerName===c));
+  const closerRows = closers.map(name=>{
+    const mine = leads.filter(l=>l.closerName===name);
+    const taken = mine.filter(l=>l.meetingStatus==='Show').length;
+    const offers = mine.filter(l=>l.offerMade==='yes').length;
+    const sales = mine.filter(l=>l.status==='Won').length;
+    const offerRate = taken>0 ? (offers/taken*100): null;
+    const closeRate = taken>0 ? (sales/taken*100): null;
+    const closeRateOffers = offers>0 ? (sales/offers*100): null;
+    const oneCall = mine.filter(l=>l.status==='Won'&&l.saleType==='1-Call Sale').length;
+    const followUp = mine.filter(l=>l.status==='Won'&&l.saleType==='Follow-Up Sale').length;
+    const revenue = mine.filter(l=>l.status==='Won').reduce((s,l)=>s+(Number(l.totalDealValue)||0),0);
+    const avgDeal = sales>0 ? revenue/sales : null;
+    const rpc = taken>0 ? revenue/taken : null;
+    const earnings = mine.reduce((s,l)=>s+earningsFor(l),0);
+    return {name,taken,offers,sales,offerRate,closeRate,closeRateOffers,oneCall,followUp,avgDeal,rpc,earnings};
+  });
+
+  // ---- loss reasons ----
+  const lossData = {};
+  LOSS_REASONS.forEach(r=> lossData[r]=0);
+  leads.filter(l=>l.status==='Lost').forEach(l=>{ if(l.lossReason) lossData[l.lossReason]=(lossData[l.lossReason]||0)+1; });
+
+  // ---- follow up aging ----
+  const agingLeads = leads.filter(isFollowUpAging);
+  const lagLeaks = leads.filter(isBookingLagLeak);
+  const depositLeaks = leads.filter(isDepositUnpaidLeak);
+
+  const c = document.getElementById('dashContent');
+  c.innerHTML = `
+    <div class="section-title"><h2>Money</h2></div>
+    <div class="stat-grid">
+      ${statTile('Deposits', fmtMoney(deposits))}
+      ${statTile('Total Sales', fmtMoney(totalSales), wonLeads.length+' won deals')}
+      ${statTile('Cash Collected', fmtMoney(cashCollected))}
+      ${statTile('Net Revenue', fmtMoney(netRevenue), 'after '+fmtMoney(refunds)+' refunds')}
+      ${statTile('Deposit → PIF', fmtPct(depositToPIF), 'avg '+fmtNum(daysToCollect)+' days to collect')}
+      ${statTile('Goal Completion', fmtPct(goalPct), fmtMoney(netRevenue)+' of '+fmtMoney(goal))}
+    </div>
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--slate-soft); margin-bottom:2px;">
+        <span>Progress to goal</span><span>${fmtPct(goalPct)}</span>
+      </div>
+      <div class="bar"><div style="width:${Math.min(goalPct||0,100)}%; background:${(goalPct||0)>=100?'var(--good)':'var(--petrol)'}"></div></div>
+    </div>
+
+    <div class="section-title"><h2>Leaks needing attention</h2></div>
+    <div class="stat-grid">
+      ${statTile('Booking Lag > 4d', lagLeaks.length, 'meetings booked too far out', lagLeaks.length>0)}
+      ${statTile('Follow-Ups Aging 7d+', agingLeads.length, 'untouched in Follow-Up Ongoing', agingLeads.length>0)}
+      ${statTile('Deposits Unpaid 14d+', depositLeaks.length, 'deposit taken, not paid in full', depositLeaks.length>0)}
+    </div>
+
+    <div class="section-title"><h2>Setter Performance</h2></div>
+    <div class="panel" style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead><tr><th>Setter</th><th>Dials</th><th>DMs</th><th>Convos</th><th>Convo→Booked</th><th>Speed to Lead</th><th>Booking Lag</th><th>Scheduled</th><th>Taken</th><th>No-Shows</th><th>Show-Up %</th><th>DQ Rate</th></tr></thead>
+        <tbody>
+        ${setterRows.length? setterRows.map(r=>`<tr>
+          <td><b>${esc(r.name)}</b></td><td>${r.dials}</td><td>${r.dms}</td><td>${r.conv}</td>
+          <td>${fmtPct(r.convToBooked)}</td><td>${r.speedToLead!==null?fmtNum(r.speedToLead)+' min':'—'}</td>
+          <td class="${r.bookingLag>4?'leak-text':''}">${r.bookingLag!==null?fmtNum(r.bookingLag)+' d':'—'}</td>
+          <td>${r.scheduled}</td><td>${r.taken}</td><td>${r.noshows}</td>
+          <td>${fmtPct(r.showRate)}</td><td>${fmtPct(r.dqRate)}</td>
+        </tr>`).join('') : `<tr><td colspan="12"><div class="empty">No setter activity in range yet.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-title"><h2>Closer Performance</h2></div>
+    <div class="panel" style="overflow-x:auto;">
+      <table class="rep-table">
+        <thead><tr><th>Closer</th><th>Calls Taken</th><th>Offers</th><th>Offer Rate</th><th>Close Rate</th><th>Close Rate (Offers)</th><th>1-Call</th><th>Follow-Up</th><th>Avg Deal</th><th>RPC</th><th>Earnings</th></tr></thead>
+        <tbody>
+        ${closerRows.length? closerRows.map(r=>`<tr>
+          <td><b>${esc(r.name)}</b></td><td>${r.taken}</td><td>${r.offers}</td>
+          <td>${fmtPct(r.offerRate)}</td><td>${fmtPct(r.closeRate)}</td><td>${fmtPct(r.closeRateOffers)}</td>
+          <td>${r.oneCall}</td><td>${r.followUp}</td><td>${r.avgDeal!==null?fmtMoney(r.avgDeal):'—'}</td>
+          <td>${r.rpc!==null?fmtMoney(r.rpc):'—'}</td><td>${fmtMoney(r.earnings)}</td>
+        </tr>`).join(''): `<tr><td colspan="11"><div class="empty">No closer activity in range yet.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-title"><h2>Loss Reasons</h2></div>
+    <div class="charts-row">
+      <div class="panel"><canvas id="lossChartEl" height="220"></canvas></div>
+      <div class="panel">
+        <h4 style="font-size:12px;color:var(--slate-soft);text-transform:uppercase;margin-bottom:10px;">Follow-Up Aging (7d+)</h4>
+        ${agingLeads.length? agingLeads.map(l=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px;">
+          <span>${esc(l.leadName)} <span style="color:var(--slate-soft)">(${esc(l.closerName)||'unassigned'})</span></span>
+          <span class="leak-text">${Math.floor(daysSince(l.lastTouchDate||l.dateCreated))}d untouched</span>
+        </div>`).join('') : '<div class="empty" style="padding:20px;">Nothing aging — nice work.</div>'}
+      </div>
+    </div>
+  `;
+
+  if(lossChart) lossChart.destroy();
+  const ctx = document.getElementById('lossChartEl');
+  if(ctx){
+    lossChart = new Chart(ctx, {
+      type:'doughnut',
+      data:{ labels:LOSS_REASONS, datasets:[{ data:LOSS_REASONS.map(r=>lossData[r]), backgroundColor:['#FF6E79','#E8B33D','#8C9BF0','#1DBEB0','#DB8CEA','#9AA8CC'], borderColor:'#132548', borderWidth:2 }]},
+      options:{ plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, font:{size:11}, color:'#8FA0C4'} } }, cutout:'60%' }
+    });
+  }
+}
+function statTile(label, value, sub, isLeak){
+  return `<div class="stat-tile ${isLeak?'leak-strip':''}"><div class="label">${label}</div><div class="value ${isLeak?'leak-text':''}">${value}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+}
+
+/* ============================= PROJECTION ============================= */
+function renderProj(){
+  const leads = STATE.leads;
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0);
+
+  // historical rates from all closed-out meetings (Show/No-Show recorded)
+  const occurred = leads.filter(l=> l.meetingStatus==='Show' || l.meetingStatus==='No-Show');
+  const shows = leads.filter(l=> l.meetingStatus==='Show');
+  const histShowRate = occurred.length? (shows.length/occurred.length) : 0.6;
+  const offersFromShows = shows.filter(l=>l.offerMade==='yes');
+  const histOfferRate = shows.length? (offersFromShows.length/shows.length) : 0.7;
+  const sales = leads.filter(l=>l.status==='Won');
+  const histCloseRateOffers = offersFromShows.length? (sales.filter(l=>l.offerMade==='yes').length/offersFromShows.length) : 0.3;
+  const histAvgDeal = sales.length? (sales.reduce((s,l)=>s+(Number(l.totalDealValue)||0),0)/sales.length) : 0;
+
+  // pipeline: meetings scheduled this month, not yet occurred
+  const upcoming = leads.filter(l=>{
+    if(!l.dateOfMeeting) return false;
+    const d = new Date(l.dateOfMeeting);
+    return d>=monthStart && d<=monthEnd && l.meetingStatus!=='Show' && l.meetingStatus!=='No-Show' && l.meetingStatus!=='Cancel' && l.meetingStatus!=='DQ';
+  });
+  // revenue already booked this month (won deals with meeting this month, or paid this month)
+  const wonThisMonth = leads.filter(l=>{
+    if(l.status!=='Won') return false;
+    const ref = l.dateOfMeeting ? new Date(l.dateOfMeeting) : null;
+    return ref && ref>=monthStart && ref<=monthEnd;
+  });
+  const bookedRevenue = wonThisMonth.reduce((s,l)=>s+(Number(l.totalDealValue)||0),0);
+  const bookedCash = leads.reduce((s,l)=>{
+    if(!l.datePaidInFull && !l.cashCollected) return s;
+    const d = l.datePaidInFull? new Date(l.datePaidInFull): null;
+    if(d && d>=monthStart && d<=monthEnd) return s+(Number(l.cashCollected)||0);
+    return s;
+  },0);
+
+  const c = document.getElementById('projContent');
+  c.innerHTML = `
+    <div class="section-title"><h2>End-of-Month Forecast</h2></div>
+    <div class="panel">
+      <div style="font-size:12.5px; color:var(--slate-soft); margin-bottom:10px;">
+        Based on <b>${upcoming.length}</b> meetings still scheduled this month, plus historical show / offer / close rates and average deal size. Adjust the assumptions below to stress-test the forecast.
+      </div>
+      <div class="assump-grid">
+        <div class="fgroup"><label>Show-Up Rate</label><input type="number" id="p_show" value="${(histShowRate*100).toFixed(0)}" min="0" max="100">%</div>
+        <div class="fgroup"><label>Offer Rate</label><input type="number" id="p_offer" value="${(histOfferRate*100).toFixed(0)}" min="0" max="100">%</div>
+        <div class="fgroup"><label>Close Rate on Offers</label><input type="number" id="p_close" value="${(histCloseRateOffers*100).toFixed(0)}" min="0" max="100">%</div>
+        <div class="fgroup"><label>Avg Deal Size</label><input type="number" id="p_deal" value="${Math.round(histAvgDeal)}" min="0"></div>
+        <div class="fgroup"><label>Best / Worst Swing</label><input type="number" id="p_swing" value="20" min="0" max="90">%</div>
+      </div>
+    </div>
+    <div class="proj-grid" id="projCards"></div>
+    <div class="panel" style="margin-top:16px;">
+      <h4 style="font-size:12px;color:var(--slate-soft);text-transform:uppercase;margin-bottom:6px;">Already on the books this month</h4>
+      <div class="proj-row"><span>Revenue from deals already Won (meeting this month)</span><b>${fmtMoney(bookedRevenue)}</b></div>
+      <div class="proj-row"><span>Cash collected / paid in full this month</span><b>${fmtMoney(bookedCash)}</b></div>
+      <div class="proj-row" style="border-bottom:none;"><span>Meetings still scheduled, not yet run</span><b>${upcoming.length}</b></div>
+    </div>
+  `;
+
+  function calc(mult){
+    const showR = clamp01(Number(document.getElementById('p_show').value)/100 * mult);
+    const offerR = clamp01(Number(document.getElementById('p_offer').value)/100 * mult);
+    const closeR = clamp01(Number(document.getElementById('p_close').value)/100 * mult);
+    const deal = Number(document.getElementById('p_deal').value)||0;
+    const expShows = upcoming.length * showR;
+    const expOffers = expShows * offerR;
+    const expSales = expOffers * closeR;
+    const expRevenue = expSales * deal;
+    return {showR,offerR,closeR,expShows,expOffers,expSales,expRevenue};
+  }
+  function clamp01(n){ return Math.max(0, Math.min(1, n)); }
+
+  function draw(){
+    const swing = Number(document.getElementById('p_swing').value)/100;
+    const expected = calc(1);
+    const worst = calc(1-swing);
+    const best = calc(1+swing);
+    const cards = [
+      {cls:'worst', title:'Worst Case', d:worst},
+      {cls:'expected', title:'Expected Case', d:expected},
+      {cls:'best', title:'Best Case', d:best},
+    ];
+    document.getElementById('projCards').innerHTML = cards.map(({cls,title,d})=>`
+      <div class="proj-card ${cls}">
+        <h3>${title}</h3>
+        <div class="big">${fmtMoney(bookedRevenue + d.expRevenue)}</div>
+        <div class="sub" style="color:var(--slate-soft); font-size:12px; margin-bottom:8px;">projected total revenue this month</div>
+        <div class="proj-row"><span>Projected shows</span><b>${fmtNum(d.expShows,1)}</b></div>
+        <div class="proj-row"><span>Projected offers</span><b>${fmtNum(d.expOffers,1)}</b></div>
+        <div class="proj-row"><span>Projected new sales</span><b>${fmtNum(d.expSales,1)}</b></div>
+        <div class="proj-row" style="border-bottom:none;"><span>New revenue from pipeline</span><b>${fmtMoney(d.expRevenue)}</b></div>
+      </div>
+    `).join('');
+  }
+  ['p_show','p_offer','p_close','p_deal','p_swing'].forEach(id=> document.getElementById(id).addEventListener('input', draw));
+  draw();
+}
+
+/* ============================= SEED DATA (first run only) ============================= */
+// Explicit admin action (button in the Admin tab) — no longer runs
+// automatically on boot, since an empty board on a real server usually means
+// "no one's entered anything yet", not "first run, please demo yourself".
+async function seedDemoData(){
+  if(!isAdmin()) return;
+  if(!confirm('Add 6 sample leads and 2 activity rows to this board?')) return;
+  const today = new Date();
+  const d = (offset)=>{ const x=new Date(today); x.setDate(x.getDate()+offset); return x.toISOString().slice(0,10); };
+  const rows = [
+    {leadName:'Ananya Verma', company:'Verma Fitness Studio', email:'ananya@vermafitness.in', phone:'+91 98450 12142', source:'Referral', status:'New', setterName:'Jordan', closerName:'', dateCreated:d(-1), lastTouchDate:d(-1)},
+    {leadName:'Rohan Deshpande', company:'Deshpande Consulting', email:'rohan@deshpandeco.in', phone:'+91 90040 19822', source:'Cold Outbound', status:'Proposal', setterName:'Jordan', closerName:'Sam', dateCreated:d(-6), firstContactDateTime:d(-6)+'T10:15', dateMeetingBooked:d(-5), dateOfMeeting:d(-2), lastTouchDate:d(-2), meetingStatus:'Show', offerMade:'yes', commissionPct:'20'},
+    {leadName:'Priya Nair', company:'Nair & Co', email:'priya@nairco.in', phone:'+91 98200 11002', source:'Paid Ad', status:'Deposit', setterName:'Alex', closerName:'Sam', dateCreated:d(-10), firstContactDateTime:d(-10)+'T09:00', dateMeetingBooked:d(-9), dateOfMeeting:d(-6), lastTouchDate:d(-6), meetingStatus:'Show', offerMade:'yes', saleType:'1-Call Sale', depositAmount:15000, totalDealValue:90000, cashCollected:15000, refundAmount:0, commissionPct:20},
+    {leadName:'Karan Bhatia', company:'Bhatia Retail Group', email:'karan@bhatiaretail.in', phone:'+91 96501 55101', source:'Inbound Lead', status:'Follow-Up Ongoing', setterName:'Alex', closerName:'Riley', dateCreated:d(-20), firstContactDateTime:d(-20)+'T14:20', dateMeetingBooked:d(-18), dateOfMeeting:d(-15), lastTouchDate:d(-9), meetingStatus:'Show', offerMade:'yes'},
+    {leadName:'Sneha Reddy', company:'Reddy Beauty Bar', email:'sneha@reddybeauty.in', phone:'+91 99010 71177', source:'Organic Social', status:'Won', setterName:'Jordan', closerName:'Riley', dateCreated:d(-16), firstContactDateTime:d(-16)+'T11:05', dateMeetingBooked:d(-14), dateOfMeeting:d(-11), lastTouchDate:d(-3), meetingStatus:'Show', offerMade:'yes', saleType:'Follow-Up Sale', depositAmount:25000, totalDealValue:150000, cashCollected:150000, datePaidInFull:d(-3), refundAmount:0, commissionPct:20},
+    {leadName:'Vikram Iyer', company:'Iyer Imports', email:'vikram@iyerimports.in', phone:'+91 93980 33133', source:'Event', status:'Lost', setterName:'Alex', closerName:'Sam', dateCreated:d(-25), firstContactDateTime:d(-25)+'T16:40', dateMeetingBooked:d(-23), dateOfMeeting:d(-20), lastTouchDate:d(-19), meetingStatus:'Show', offerMade:'yes', lossReason:'Price'},
+  ];
+  try{
+    await api('/leads/bulk-import', { method:'POST', body: JSON.stringify({ rows }) });
+    await api('/activity', { method:'POST', body: JSON.stringify({ date:d(-1), setter:'Jordan', dials:40, dms:15, conversations:8 }) });
+    await api('/activity', { method:'POST', body: JSON.stringify({ date:d(-1), setter:'Alex', dials:35, dms:20, conversations:6 }) });
+    await loadAll();
+    renderKanban();
+    showToast('Sample data added');
+  }catch(err){ showToast(err.message); }
+}
+
+/* ============================= LOGIN / USERS ============================= */
+let setupNeeded = false;
+async function renderLogin(){
+  const body = document.getElementById('loginBody');
+  document.querySelector('#loginBg .modal-head h2').textContent = setupNeeded ? "Set up this board" : "Log in";
+
+  if(setupNeeded){
+    body.innerHTML = `
+      <p style="font-size:13px;color:var(--slate-soft);margin-bottom:12px;">No users yet — set up the first Admin account for this board. This account can add everyone else from the Admin tab afterward.</p>
+      <div class="fgroup"><label>Display name</label><input type="text" id="login_newName" placeholder="e.g. Rohan Sharma"></div>
+      <div class="fgroup" style="margin-top:8px;"><label>Username</label><input type="text" id="login_newUsername" placeholder="e.g. rohan.sharma"></div>
+      <div class="fgroup" style="margin-top:8px;"><label>Password</label><input type="password" id="login_newPassword" placeholder="At least 8 characters"></div>
+      <div class="err-msg" id="loginErr" style="display:none;"></div>
+      <button class="btn btn-primary" id="login_createAdmin" style="margin-top:12px;width:100%;">Create Admin Account</button>
+    `;
+    document.getElementById('login_createAdmin').addEventListener('click', async ()=>{
+      const name = document.getElementById('login_newName').value.trim();
+      const username = document.getElementById('login_newUsername').value.trim().toLowerCase();
+      const password = document.getElementById('login_newPassword').value;
+      try{
+        const { token, user } = await api('/auth/setup', { method:'POST', body: JSON.stringify({ name, username, password }) });
+        setSession(token, user);
+        document.getElementById('loginBg').classList.remove('open');
+        await loadAll();
+        afterLogin();
+      }catch(err){
+        const e = document.getElementById('loginErr'); e.textContent = err.message; e.style.display = 'block';
+      }
+    });
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="fgroup"><label>Username</label><input type="text" id="login_username" autocomplete="username"></div>
+    <div class="fgroup" style="margin-top:8px;"><label>Password</label><input type="password" id="login_password" autocomplete="current-password"></div>
+    <div class="err-msg" id="loginErr" style="display:none;"></div>
+    <button class="btn btn-primary" id="login_submit" style="margin-top:12px;width:100%;">Log in</button>
+    <div style="font-size:11px;color:var(--slate-soft);margin-top:10px;">Don't have an account? Ask an Admin to add you from the Admin tab.</div>
+  `;
+  function doLogin(){
+    const username = document.getElementById('login_username').value.trim().toLowerCase();
+    const password = document.getElementById('login_password').value;
+    api('/auth/login', { method:'POST', body: JSON.stringify({ username, password }) })
+      .then(async ({ token, user })=>{
+        setSession(token, user);
+        document.getElementById('loginBg').classList.remove('open');
+        await loadAll();
+        afterLogin();
+      })
+      .catch(err=>{
+        const e = document.getElementById('loginErr'); e.textContent = err.message; e.style.display = 'block';
+      });
+  }
+  document.getElementById('login_submit').addEventListener('click', doLogin);
+  document.getElementById('login_password').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+}
+async function afterLogin(){
+  const u = currentUser();
+  document.getElementById('userBadgeBtn').innerHTML = u ? `👤 ${esc(u.name)} <span class="role-badge role-${u.role}" style="margin-left:4px;">${ROLE_PRESETS[u.role]?.label||u.role}</span>` : '👤 —';
+  document.getElementById('adminTabBtn').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('newLeadBtn').style.opacity = can('create') ? '1':'.5';
+  document.getElementById('logActivityBtn').style.opacity = can('create') ? '1':'.5';
+  renderKanban();
+}
+document.getElementById('userBadgeBtn').addEventListener('click', async ()=>{
+  if(currentUser()){
+    if(!confirm(`Log out ${currentUser().name}?`)) return;
+    try{ await api('/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
+    clearSession();
+    // A reload — not just re-showing the login modal on top of the existing
+    // page — is what actually guarantees no lead/money data is left sitting
+    // in memory or in the DOM behind the overlay for the next person to find.
+    location.reload();
+    return;
+  }
+  const { needed } = await api('/auth/setup-needed');
+  setupNeeded = needed;
+  await renderLogin();
+  document.getElementById('loginBg').classList.add('open');
+});
+
+/* ============================= ADMIN PANEL ============================= */
+let ADMIN_USERS = [];
+async function renderAdmin(){
+  const c = document.getElementById('adminContent');
+  if(!isAdmin()){
+    c.innerHTML = `<div class="empty"><h3>Admins only</h3><div>Ask your Admin to grant you access from this tab.</div></div>`;
+    return;
+  }
+  try{ ADMIN_USERS = (await api('/users')).users; }
+  catch(err){ c.innerHTML = `<div class="empty"><h3>Couldn't load team</h3><div>${esc(err.message)}</div></div>`; return; }
+
+  c.innerHTML = `
+    <div class="section-title"><h2>Team &amp; Access</h2></div>
+    <div class="panel">
+      <div style="font-size:12px;color:var(--slate-soft);margin-bottom:12px;">
+        This controls who can create, edit, or delete leads, and who can see money figures (Deposit, Deal Value, Cash Collected, Earnings). Every account has its own password, and the server checks these permissions on every request — this is a real access control, not just a hidden button.
+      </div>
+      <div id="adminUserRows"></div>
+      <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="fgroup"><label>Display name</label><input type="text" id="admin_newName" placeholder="e.g. Rohan Sharma"></div>
+        <div class="fgroup"><label>Username (for login)</label><input type="text" id="admin_newUsername" placeholder="e.g. rohan.sharma"></div>
+        <div class="fgroup"><label>Password</label><input type="password" id="admin_newPassword" placeholder="At least 8 characters"></div>
+        <div class="fgroup"><label>Role</label><select id="admin_newRole">${Object.keys(ROLE_PRESETS).map(r=>`<option value="${r}">${ROLE_PRESETS[r].label}</option>`).join('')}</select></div>
+        <button class="btn btn-primary btn-sm" id="admin_addUser">+ Add</button>
+      </div>
+    </div>
+
+    <div class="section-title"><h2>Data &amp; sharing</h2></div>
+    <div class="drive-panel">
+      <p style="font-size:13px;margin:0 0 10px;">All leads, activity, and settings now live in one shared database on the server — everyone on this network sees the same live data, nothing to import/export between people anymore. Export XLSX is still there for backups or working offline.</p>
+      <button class="btn btn-light btn-sm" id="admin_exportForDrive">⬇ Export XLSX now</button>
+      <button class="btn btn-light btn-sm" id="admin_seedDemo" style="margin-left:8px;">+ Add sample data</button>
+    </div>
+  `;
+  document.getElementById('admin_exportForDrive').addEventListener('click', exportLeadsXLSX);
+  document.getElementById('admin_seedDemo').addEventListener('click', seedDemoData);
+  document.getElementById('admin_addUser').addEventListener('click', async ()=>{
+    if(!requireAdminOrBlock()) return;
+    const name = document.getElementById('admin_newName').value.trim();
+    const username = document.getElementById('admin_newUsername').value.trim().toLowerCase();
+    const password = document.getElementById('admin_newPassword').value;
+    const role = document.getElementById('admin_newRole').value;
+    try{
+      await api('/users', { method:'POST', body: JSON.stringify({ name, username, password, role }) });
+      renderAdmin();
+      showToast('Team member added');
+    }catch(err){ showToast(err.message); }
+  });
+  renderAdminUserRows();
+}
+function renderAdminUserRows(){
+  const wrap = document.getElementById('adminUserRows');
+  const permKeys = [['create','Create'],['edit','Edit'],['delete','Delete'],['viewMoney','View Money'],['manageUsers','Manage Users']];
+  const me = currentUser();
+  wrap.innerHTML = ADMIN_USERS.map(u=>`
+    <div class="perm-row" data-id="${u.id}">
+      <div style="min-width:150px;"><b>${esc(u.name)}</b><div style="font-size:11px;color:var(--slate-soft);">@${esc(u.username||'—')}</div></div>
+      <select class="admin_role" data-id="${u.id}" style="width:120px;">${Object.keys(ROLE_PRESETS).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${ROLE_PRESETS[r].label}</option>`).join('')}</select>
+      ${permKeys.map(([k,l])=>`<label class="perm-check"><input type="checkbox" class="admin_perm" data-id="${u.id}" data-perm="${k}" ${u.perms&&u.perms[k]?'checked':''}> ${l}</label>`).join('')}
+      <button class="btn btn-light btn-sm admin_resetPw" data-id="${u.id}">Reset password</button>
+      <button class="btn btn-danger btn-sm admin_removeUser" data-id="${u.id}" ${u.id===(me&&me.id)?'disabled title="Can\'t remove yourself"':''}>Remove</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.admin_role').forEach(sel=>{
+    sel.addEventListener('change', async (e)=>{
+      if(!requireAdminOrBlock()) return;
+      try{
+        const { user } = await api(`/users/${e.target.dataset.id}`, { method:'PATCH', body: JSON.stringify({ role: e.target.value }) });
+        const u = ADMIN_USERS.find(x=>x.id===user.id); Object.assign(u, user);
+        renderAdminUserRows();
+        if(me && u.id===me.id){ STATE_CURRENT_USER = user; afterLogin(); }
+      }catch(err){ showToast(err.message); renderAdminUserRows(); }
+    });
+  });
+  wrap.querySelectorAll('.admin_perm').forEach(chk=>{
+    chk.addEventListener('change', async (e)=>{
+      if(!requireAdminOrBlock()) return;
+      const u = ADMIN_USERS.find(x=>x.id===e.target.dataset.id);
+      const perms = { ...u.perms, [e.target.dataset.perm]: e.target.checked };
+      try{
+        const { user } = await api(`/users/${u.id}`, { method:'PATCH', body: JSON.stringify({ perms }) });
+        Object.assign(u, user);
+        if(me && u.id===me.id){ STATE_CURRENT_USER = user; afterLogin(); }
+      }catch(err){ showToast(err.message); renderAdminUserRows(); }
+    });
+  });
+  wrap.querySelectorAll('.admin_resetPw').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      if(!requireAdminOrBlock()) return;
+      const password = prompt('New password (at least 8 characters):');
+      if(!password) return;
+      try{
+        await api(`/users/${e.target.dataset.id}`, { method:'PATCH', body: JSON.stringify({ password }) });
+        showToast('Password reset');
+      }catch(err){ showToast(err.message); }
+    });
+  });
+  wrap.querySelectorAll('.admin_removeUser').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      if(!requireAdminOrBlock()) return;
+      const id = e.target.dataset.id;
+      if(me && id===me.id) return;
+      if(!confirm('Remove this team member?')) return;
+      try{
+        await api(`/users/${id}`, { method:'DELETE' });
+        ADMIN_USERS = ADMIN_USERS.filter(u=>u.id!==id);
+        renderAdminUserRows();
+      }catch(err){ showToast(err.message); }
+    });
+  });
+}
+
+/* ============================= TUTORIAL ============================= */
+const TUTORIAL_STEPS = [
+  {title:"Welcome to Pipeline", body:"This board is the single source of truth for every lead. Setters and Closers work leads on the Kanban board, and the Lead Log, Dashboard, and Projection tabs all calculate themselves automatically from those cards — nothing gets entered twice."},
+  {title:"Kanban board", body:"Each card is one lead. Drag a card to a new column, or use the status dropdown on mobile. Cards turn red when something's leaking: booking lag over 4 days, no follow-up touch in 7+ days, or a deposit unpaid 14+ days. Use the search box to jump straight to a lead, and switch between Board, List, or Calendar view with the toggle."},
+  {title:"Lead Log", body:"Every field from every card, in one filterable, sortable table. Filter by rep, source, status, or date range, and click any row to open that lead."},
+  {title:"Dashboard", body:"Auto-calculated setter and closer performance, money metrics, loss reasons, and a live list of anything aging or leaking. Filter it by rep, source, or date range, and set your monthly Revenue Goal here."},
+  {title:"Projection", body:"Forecasts end-of-month revenue from your pipeline's scheduled meetings and historical show/offer/close rates. Adjust the assumptions to see best, expected, and worst case."},
+  {title:"Import / Export / Share", body:"Export XLSX gives you every lead in a spreadsheet. Share sends that file straight to a teammate's phone or email in one tap on supported browsers. Whoever receives it clicks Import XLSX to bring it in: rows with a matching Lead ID update that lead, new rows create new leads."},
+  {title:"Team & Access", body:"Admins manage who can create, edit, delete, or see money figures from the Admin tab. Everyone has their own username and password, and the server checks these permissions on every request — so this is real access control, not just hidden buttons."},
+];
+let tutorialIdx = 0;
+function renderTutorial(){
+  const s = TUTORIAL_STEPS[tutorialIdx];
+  document.getElementById('tutorialBody').innerHTML = `<h3 style="margin-bottom:8px;color:var(--petrol);">${s.title}</h3><p style="font-size:13.5px;line-height:1.55;">${s.body}</p>`;
+  document.getElementById('tutorialDots').innerHTML = TUTORIAL_STEPS.map((_,i)=>`<span style="width:6px;height:6px;border-radius:50%;background:${i===tutorialIdx?'var(--petrol)':'var(--line)'};display:inline-block;"></span>`).join('');
+  document.getElementById('tutorialPrev').style.visibility = tutorialIdx===0 ? 'hidden':'visible';
+  document.getElementById('tutorialNext').textContent = tutorialIdx===TUTORIAL_STEPS.length-1 ? 'Done' : 'Next';
+}
+document.getElementById('tutorialBtn').addEventListener('click', ()=>{ tutorialIdx=0; renderTutorial(); document.getElementById('tutorialBg').classList.add('open'); });
+document.getElementById('tutorialClose').addEventListener('click', ()=> document.getElementById('tutorialBg').classList.remove('open'));
+document.getElementById('tutorialPrev').addEventListener('click', ()=>{ if(tutorialIdx>0){ tutorialIdx--; renderTutorial(); } });
+document.getElementById('tutorialNext').addEventListener('click', ()=>{
+  if(tutorialIdx < TUTORIAL_STEPS.length-1){ tutorialIdx++; renderTutorial(); }
+  else document.getElementById('tutorialBg').classList.remove('open');
+});
+
+/* ============================= BOOT ============================= */
+(async function boot(){
+  if(authToken){
+    try{
+      const { user } = await api('/auth/me');
+      STATE_CURRENT_USER = user;
+      await loadAll();
+      document.getElementById('loginBg').classList.remove('open');
+      afterLogin();
+      return;
+    }catch(err){
+      clearSession(); // stale/expired token — fall through to login
+    }
+  }
+  try{ setupNeeded = (await api('/auth/setup-needed')).needed; }
+  catch(err){ setupNeeded = false; }
+  await renderLogin();
+})();
+</script>
+</body>
+</html>
