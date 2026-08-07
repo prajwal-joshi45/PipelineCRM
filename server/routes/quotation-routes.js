@@ -65,7 +65,8 @@ function pushQuoteLog(quote, { by, changes, note }) {
 }
 
 router.get('/', (req, res) => {
-  res.json({ quotations: db.raw.quotations });
+  const wantDeleted = req.query.deleted === '1';
+  res.json({ quotations: db.raw.quotations.filter(q => !!q.deleted === wantDeleted) });
 });
 
 router.post('/', requirePerm('create'), async (req, res) => {
@@ -96,9 +97,32 @@ router.patch('/:id', requirePerm('edit'), async (req, res) => {
 });
 
 router.delete('/:id', requirePerm('delete'), async (req, res) => {
+  const quote = db.raw.quotations.find(q => q.id === req.params.id && !q.deleted);
+  if (!quote) return res.status(404).json({ error: 'Quotation not found' });
+  quote.deleted = true;
+  quote.deletedAt = new Date().toISOString();
+  quote.deletedBy = req.user.name;
+  pushQuoteLog(quote, { by: req.user.name, changes: ['Deleted'] });
+  await db.persist();
+  res.json({ ok: true });
+});
+
+router.post('/:id/restore', requirePerm('delete'), async (req, res) => {
+  const quote = db.raw.quotations.find(q => q.id === req.params.id && q.deleted);
+  if (!quote) return res.status(404).json({ error: 'Deleted quotation not found' });
+  quote.deleted = false;
+  quote.deletedAt = null;
+  quote.deletedBy = null;
+  pushQuoteLog(quote, { by: req.user.name, changes: ['Restored from Deleted'] });
+  await db.persist();
+  res.json({ quotation: quote });
+});
+
+router.delete('/:id/permanent', requirePerm('delete'), async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   const before = db.raw.quotations.length;
-  db.raw.quotations = db.raw.quotations.filter(q => q.id !== req.params.id);
-  if (db.raw.quotations.length === before) return res.status(404).json({ error: 'Quotation not found' });
+  db.raw.quotations = db.raw.quotations.filter(q => !(q.id === req.params.id && q.deleted));
+  if (db.raw.quotations.length === before) return res.status(404).json({ error: 'Deleted quotation not found' });
   await db.persist();
   res.json({ ok: true });
 });

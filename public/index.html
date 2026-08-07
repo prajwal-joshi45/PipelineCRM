@@ -266,6 +266,8 @@ tr:hover td{background:rgba(255,255,255,.03);}
 .log-detail-remarks.empty{color:var(--slate-soft); font-style:italic;}
 .card-logbadge{font-size:10.5px; color:var(--slate-soft); display:inline-flex; align-items:center; gap:3px; margin-top:4px;}
 .card-remarks{font-size:11px; color:var(--slate-soft); margin-top:6px; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.tel-link{color:var(--petrol,#1DBEB0); text-decoration:none; font-weight:600;}
+.tel-link:hover{text-decoration:underline;}
 
 /* Printable quotation document — built once as HTML and dropped into this
    off-screen container, then shown (and everything else hidden) only for
@@ -381,10 +383,13 @@ tr:hover td{background:rgba(255,255,255,.03);}
     </div>
     <div class="tabs">
       <button class="tab-btn active" data-view="kanban">Kanban</button>
+      <button class="tab-btn" data-view="fresh">Fresh Leads</button>
       <button class="tab-btn" data-view="log">Lead Log</button>
       <button class="tab-btn" data-view="dash">Dashboard</button>
       <button class="tab-btn" data-view="proj">Projection</button>
       <button class="tab-btn" data-view="quote">Quotation</button>
+      <button class="tab-btn" data-view="employees" id="employeesTabBtn" style="display:none;">Employees</button>
+      <button class="tab-btn" data-view="deleted" id="deletedTabBtn" style="display:none;">Deleted</button>
       <button class="tab-btn" data-view="admin" id="adminTabBtn" style="display:none;">Admin</button>
     </div>
     <div class="topbar-actions">
@@ -438,6 +443,21 @@ tr:hover td{background:rgba(255,255,255,.03);}
     <!-- QUOTATION -->
     <div class="view" id="view-quote">
       <div id="quoteContent"></div>
+    </div>
+
+    <!-- FRESH LEADS -->
+    <div class="view" id="view-fresh">
+      <div id="freshContent"></div>
+    </div>
+
+    <!-- EMPLOYEES -->
+    <div class="view" id="view-employees">
+      <div id="employeesContent"></div>
+    </div>
+
+    <!-- DELETED -->
+    <div class="view" id="view-deleted">
+      <div id="deletedContent"></div>
     </div>
 
     <!-- ADMIN -->
@@ -513,6 +533,21 @@ tr:hover td{background:rgba(255,255,255,.03);}
   </div>
 </div>
 
+<!-- EMPLOYEE EDIT MODAL -->
+<div class="modal-bg" id="employeeEditBg">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head"><h2 id="employeeEditTitle">Edit Employee</h2><button class="modal-close" id="employeeEditClose">&times;</button></div>
+    <div class="modal-body" id="employeeEditBody"></div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-light" id="employeeEditCancel">Cancel</button>
+        <button class="btn btn-primary" id="employeeEditSave">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- QUICK ADD MODAL -->
 <div class="modal-bg" id="quickAddBg">
   <div class="modal" style="max-width:420px;">
@@ -569,7 +604,7 @@ let STATE = {
   leads: [],
   activity: [],   // {id, date, setter, dials, dms, conversations}
   quotations: [],
-  settings: { revenueGoal: 100000, commissionBase: "cash", quotationDefaults: null }, // "cash" or "deal"
+  settings: { revenueGoal: 100000, commissionBase: "cash", inactivityTimeoutMinutes: 30, quotationDefaults: null }, // "cash" or "deal"
 };
 
 const ROLE_PRESETS = {
@@ -889,6 +924,12 @@ function daysSince(dateStr){
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function avg(arr){ const v = arr.filter(x=>x!==null && x!==undefined && !isNaN(x)); if(!v.length) return null; return v.reduce((a,b)=>a+b,0)/v.length; }
 function esc(s){ return (s===undefined||s===null)?'':String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function telLink(phone){
+  if(!phone) return '—';
+  const digits = String(phone).replace(/[^\d+]/g,'');
+  if(!digits) return esc(phone);
+  return `<a href="tel:${digits}" class="tel-link" onclick="event.stopPropagation()" title="Call ${esc(phone)}">📞 ${esc(phone)}</a>`;
+}
 
 /* ---- leak / flag detection ---- */
 function bookingLagDays(lead){ return daysBetween(lead.dateMeetingBooked, lead.dateOfMeeting); }
@@ -931,10 +972,13 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-'+btn.dataset.view).classList.add('active');
     if(btn.dataset.view==='kanban') renderKanban();
+    if(btn.dataset.view==='fresh') renderFreshLeads();
     if(btn.dataset.view==='log') renderLog();
     if(btn.dataset.view==='dash') renderDash();
     if(btn.dataset.view==='proj') renderProj();
     if(btn.dataset.view==='quote') renderQuoteList();
+    if(btn.dataset.view==='employees') renderEmployees();
+    if(btn.dataset.view==='deleted') renderDeleted();
     if(btn.dataset.view==='admin') renderAdmin();
   });
 });
@@ -964,8 +1008,9 @@ function allRepsCombined(){
 
 function kanbanSearchFiltered(){
   const q = (document.getElementById('kanbanSearch')?.value||'').toLowerCase().trim();
-  if(!q) return STATE.leads;
-  return STATE.leads.filter(l=> [l.leadName,l.company,l.email,l.phone].join(' ').toLowerCase().includes(q));
+  const pipeline = STATE.leads.filter(l=> l.bucket !== 'fresh');
+  if(!q) return pipeline;
+  return pipeline.filter(l=> [l.leadName,l.company,l.email,l.phone].join(' ').toLowerCase().includes(q));
 }
 
 function renderKanban(){
@@ -1027,6 +1072,7 @@ function renderKanbanList(){
       <span class="lmeta">${esc(l.company)||'—'}</span>
       <span class="lmeta">Setter: ${esc(l.setterName)||'—'}</span>
       <span class="lmeta">Closer: ${esc(l.closerName)||'—'}</span>
+      ${l.phone ? `<span class="lmeta">${telLink(l.phone)}</span>` : ''}
       <span class="lmeta">Meeting: ${fmtMeetingWhen(l)}</span>
       <span class="lmeta" style="margin-left:auto;">${fmtMoney(l.cashCollected||0)}</span>
       ${leaks.length? `<span class="leak-tag"><span class="leak-dot">!</span>${leaks.length} flag${leaks.length>1?'s':''}</span>`:''}
@@ -1080,6 +1126,7 @@ function renderCard(lead){
     </div>
     <div class="card-meta">
       <div><b>Setter:</b> ${esc(lead.setterName)||'—'} &nbsp; <b>Closer:</b> ${esc(lead.closerName)||'—'}</div>
+      ${lead.phone ? `<div><b>Phone:</b> ${telLink(lead.phone)}</div>` : ''}
       <div><b>Meeting:</b> ${fmtMeetingWhen(lead)} ${lead.meetingStatus? '· '+lead.meetingStatus:''}</div>
       ${lead.status==='Lost' && lead.lossReason ? `<div><b>Lost:</b> ${esc(lead.lossReason)}</div>`:''}
     </div>
@@ -1150,11 +1197,12 @@ function openLeadModal(id, opts={}){
   const lead = id ? {...STATE.leads.find(l=>l.id===id)} : {
     id: uid(), leadName:'', company:'', email:'', phone:'', source:'', setterName:'', closerName:'',
     dateCreated: todayISO(), firstContactDateTime:'', dateMeetingBooked:'', dateOfMeeting:'', meetingTime:'',
-    meetingStatus:'', offerMade:'', saleType:'', status:'New', lossReason:'', remarks:'',
+    meetingStatus:'', offerMade:'', saleType:'', status:'New', lossReason:'', remarks:'', bucket: opts.bucket || 'pipeline',
     depositAmount:'', totalDealValue:'', cashCollected:'', datePaidInFull:'', refundAmount:'', commissionPct:'',
     lastTouchDate: todayISO()
   };
   if(opts.forceStatus) lead.status = opts.forceStatus;
+  document.getElementById('leadModalBg')._bucket = lead.bucket || 'pipeline';
   if(opts.prefillGaps){
     // Fill in blanks on the existing record with values from the new-lead
     // form the user just typed — never overwrites data that's already there.
@@ -1327,6 +1375,7 @@ document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
   const isNewDraft = document.getElementById('leadModalBg')._newLead;
   if(!can(isNewDraft?'create':'edit')){ showToast("You don't have access to do that"); return; }
   const data = collectLeadForm();
+  data.bucket = document.getElementById('leadModalBg')._bucket || 'pipeline';
   if(data.status === 'Lost' && !data.lossReason){
     document.getElementById('leadErr').style.display = 'block';
     return;
@@ -1365,6 +1414,7 @@ document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
   showToast(isNew? 'Lead added' : 'Lead updated');
   if(document.getElementById('view-log').classList.contains('active')) renderLog();
   if(document.getElementById('view-dash').classList.contains('active')) renderDash();
+  if(document.getElementById('view-fresh').classList.contains('active')) renderFreshList();
 });
 document.getElementById('deleteLeadBtn').addEventListener('click', async ()=>{
   if(!can('delete')){ showToast("You don't have delete access"); return; }
@@ -1469,22 +1519,26 @@ document.querySelectorAll('.vt-btn').forEach(btn=>{
 });
 
 /* ============================= ACTIVITY MODAL ============================= */
-document.getElementById('logActivityBtn').addEventListener('click', ()=>{
-  if(!can('create')){ showToast("You don't have access to log activity"); return; }
+function openActivityModal(existingRow){
+  if(!can(existingRow?'edit':'create')){ showToast("You don't have access to log activity"); return; }
   const body = document.getElementById('activityModalBody');
   const reps = allReps('setterName');
+  const row = existingRow || { date: todayISO(), setter:'', dials:0, dms:0, conversations:0 };
   body.innerHTML = `
     <div class="form-grid">
-      ${fieldRow('Date', `<input type="date" id="a_date" value="${todayISO()}">`)}
-      ${fieldRow('Setter', `<input type="text" id="a_setter" list="setterList" placeholder="Setter name">`)}
-      ${fieldRow('Dials', `<input type="number" id="a_dials" min="0" value="0">`)}
-      ${fieldRow('DMs Sent', `<input type="number" id="a_dms" min="0" value="0">`)}
-      ${fieldRow('Conversations', `<input type="number" id="a_conv" min="0" value="0">`, true)}
+      ${fieldRow('Date', `<input type="date" id="a_date" value="${row.date}">`)}
+      ${fieldRow('Setter', `<input type="text" id="a_setter" list="setterList" placeholder="Setter name" value="${esc(row.setter)}">`)}
+      ${fieldRow('Dials', `<input type="number" id="a_dials" min="0" value="${row.dials}">`)}
+      ${fieldRow('DMs Sent', `<input type="number" id="a_dms" min="0" value="${row.dms}">`)}
+      ${fieldRow('Conversations', `<input type="number" id="a_conv" min="0" value="${row.conversations}">`, true)}
     </div>
     <datalist id="setterList">${reps.map(r=>`<option value="${esc(r)}">`).join('')}</datalist>
   `;
+  document.querySelector('#activityModalBg .modal-head h2').textContent = existingRow ? 'Edit Call Log Entry' : 'Log Daily Activity';
   document.getElementById('activityModalBg').classList.add('open');
-});
+  document.getElementById('activityModalBg')._editId = existingRow ? existingRow.id : null;
+}
+document.getElementById('logActivityBtn').addEventListener('click', ()=> openActivityModal(null));
 document.getElementById('activityModalClose').addEventListener('click', ()=> document.getElementById('activityModalBg').classList.remove('open'));
 document.getElementById('cancelActivityBtn').addEventListener('click', ()=> document.getElementById('activityModalBg').classList.remove('open'));
 document.getElementById('saveActivityBtn').addEventListener('click', async ()=>{
@@ -1496,14 +1550,61 @@ document.getElementById('saveActivityBtn').addEventListener('click', async ()=>{
     dms: Number(document.getElementById('a_dms').value)||0,
     conversations: Number(document.getElementById('a_conv').value)||0
   };
+  const editId = document.getElementById('activityModalBg')._editId;
   try{
-    const { activity } = await api('/activity', { method:'POST', body: JSON.stringify(payload) });
-    STATE.activity.push(activity);
+    if(editId){
+      const { activity } = await api(`/activity/${editId}`, { method:'PATCH', body: JSON.stringify(payload) });
+      const idx = STATE.activity.findIndex(a=>a.id===editId);
+      if(idx>=0) STATE.activity[idx] = activity;
+    } else {
+      const { activity } = await api('/activity', { method:'POST', body: JSON.stringify(payload) });
+      STATE.activity.push(activity);
+    }
   }catch(err){ showToast(err.message); return; }
   document.getElementById('activityModalBg').classList.remove('open');
-  showToast('Activity logged');
+  showToast(editId ? 'Call log entry updated' : 'Activity logged');
   if(document.getElementById('view-dash').classList.contains('active')) renderDash();
 });
+
+function renderCallLogTable(){
+  const wrap = document.getElementById('callLogSection');
+  if(!wrap) return;
+  const rows = STATE.activity.slice().sort((a,b)=> new Date(b.date||0) - new Date(a.date||0));
+  if(!rows.length){ wrap.innerHTML = `<div class="empty"><h3>No activity logged yet</h3><div>Use "+ Daily Activity" to log dials, DMs, and conversations — entries show up here and can be edited or removed.</div></div>`; return; }
+  wrap.innerHTML = `
+    <table><thead><tr><th>Date</th><th>Setter</th><th>Dials</th><th>DMs</th><th>Conversations</th><th>Logged by</th><th></th></tr></thead>
+    <tbody>
+    ${rows.map(a=>`
+      <tr class="call-log-row" data-id="${a.id}" style="cursor:pointer;">
+        <td>${fmtDate(a.date)}</td>
+        <td>${esc(a.setter)}</td>
+        <td>${a.dials}</td>
+        <td>${a.dms}</td>
+        <td>${a.conversations}</td>
+        <td>${esc(a.createdByName)||'—'}</td>
+        <td><button class="btn btn-light btn-sm call-log-delete" data-id="${a.id}" onclick="event.stopPropagation()">Delete</button></td>
+      </tr>
+    `).join('')}
+    </tbody></table>
+  `;
+  wrap.querySelectorAll('.call-log-row').forEach(r=>{
+    r.addEventListener('click', ()=>{
+      const row = STATE.activity.find(a=>a.id===r.dataset.id);
+      if(row) openActivityModal(row);
+    });
+  });
+  wrap.querySelectorAll('.call-log-delete').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!can('delete')){ showToast("You don't have access to delete activity entries"); return; }
+      if(!confirm('Delete this call log entry?')) return;
+      try{ await api(`/activity/${btn.dataset.id}`, { method:'DELETE' }); }
+      catch(err){ showToast(err.message); return; }
+      STATE.activity = STATE.activity.filter(a=>a.id!==btn.dataset.id);
+      showToast('Call log entry deleted');
+      renderDash();
+    });
+  });
+}
 
 /* ============================= QUOTATION ============================= */
 const BIZONET_LOGO_DATA_URI = "data:image/jpeg;base64,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";
@@ -1749,6 +1850,26 @@ function openQuoteModal(id, draftOverride){
   body.addEventListener('input', recalcTotalPreview);
   body.addEventListener('change', recalcTotalPreview);
   recalcTotalPreview();
+
+  // Selecting a company that already has a lead record pulls in whatever
+  // contact details are available (phone, contact name) — only fills blank
+  // fields, never overwrites something already typed in this form.
+  let lastAutofillCompany = '';
+  function autofillFromCompany(){
+    const typed = document.getElementById('q_company').value.trim();
+    if(!typed || typed.toLowerCase() === lastAutofillCompany) return;
+    const match = STATE.leads.find(l=> String(l.company||'').trim().toLowerCase() === typed.toLowerCase());
+    if(!match) return;
+    lastAutofillCompany = typed.toLowerCase();
+    const nameEl = document.getElementById('q_contactName');
+    const phoneEl = document.getElementById('q_contactPhone');
+    let filled = [];
+    if(!nameEl.value.trim() && match.leadName){ nameEl.value = match.leadName; filled.push('contact name'); }
+    if(!phoneEl.value.trim() && match.phone){ phoneEl.value = match.phone; filled.push('phone'); }
+    if(filled.length) showToast(`Pulled ${filled.join(' & ')} from the existing lead for ${match.company}`);
+  }
+  document.getElementById('q_company').addEventListener('change', autofillFromCompany);
+  document.getElementById('q_company').addEventListener('blur', autofillFromCompany);
 
   document.getElementById('q_addModule').addEventListener('click', ()=>{
     addQuoteRowAndRerender('modules', {title:'', desc:'', include:true});
@@ -2094,6 +2215,207 @@ async function saveQuoteDefaultsFromForm(){
   return true;
 }
 
+/* ============================= FRESH LEADS ============================= */
+function freshLeadsFiltered(){
+  const q = (document.getElementById('freshSearch')?.value||'').toLowerCase().trim();
+  const src = document.getElementById('freshSourceFilter')?.value||'';
+  return STATE.leads.filter(l=>{
+    if(l.bucket !== 'fresh') return false;
+    if(src && l.source !== src) return false;
+    if(q){
+      const hay = [l.leadName,l.company,l.email,l.phone,l.source].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b)=> new Date(b.dateCreated||0) - new Date(a.dateCreated||0));
+}
+function renderFreshLeads(){
+  const c = document.getElementById('freshContent');
+  const sources = allSources();
+  c.innerHTML = `
+    <div class="quote-toolbar">
+      <div>
+        <h2 style="font-size:16px;">Fresh Leads</h2>
+        <div style="font-size:12px;color:var(--slate-soft);">New, unworked leads — kept separate from the pipeline board until someone starts working them. Filter to find one, then move it to Pipeline.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="newFreshLeadBtn">+ Add Fresh Lead</button>
+    </div>
+    <div class="quote-toolbar" style="gap:8px; margin-top:0;">
+      <input type="text" id="freshSearch" placeholder="Search fresh leads (name, company, phone)..." style="flex:1;">
+      <select id="freshSourceFilter" style="width:180px;"><option value="">All sources</option>${sources.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+    </div>
+    <div id="freshList"></div>
+  `;
+  document.getElementById('newFreshLeadBtn').addEventListener('click', ()=>{
+    if(!can('create')){ showToast("You don't have access to add leads"); return; }
+    openLeadModal(null, { bucket: 'fresh' });
+  });
+  document.getElementById('freshSearch').addEventListener('input', renderFreshList);
+  document.getElementById('freshSourceFilter').addEventListener('change', renderFreshList);
+  renderFreshList();
+}
+function renderFreshList(){
+  const wrap = document.getElementById('freshList');
+  const rows = freshLeadsFiltered();
+  if(!rows.length){ wrap.innerHTML = `<div class="empty"><h3>No fresh leads</h3><div>New leads added here stay off the pipeline board until you move them.</div></div>`; return; }
+  wrap.innerHTML = rows.map(l=>`
+    <div class="list-row" data-id="${l.id}">
+      <span class="lname">${esc(l.leadName)||'Unnamed lead'}</span>
+      <span class="lmeta">${esc(l.company)||'—'}</span>
+      <span class="lmeta">${esc(l.source)||'—'}</span>
+      ${l.phone ? `<span class="lmeta">${telLink(l.phone)}</span>` : '<span class="lmeta">—</span>'}
+      <span class="lmeta">Added ${fmtDate(l.dateCreated)}</span>
+      <button class="btn btn-light btn-sm fresh-promote" data-id="${l.id}" onclick="event.stopPropagation()">→ Move to Pipeline</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.list-row').forEach(r=> r.addEventListener('click', (e)=>{ if(e.target.classList.contains('fresh-promote')) return; openLeadModal(r.dataset.id); }));
+  wrap.querySelectorAll('.fresh-promote').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!can('edit')){ showToast("You don't have access to do that"); return; }
+      try{
+        const { lead } = await api(`/leads/${btn.dataset.id}/promote`, { method:'POST' });
+        const idx = STATE.leads.findIndex(l=>l.id===lead.id);
+        STATE.leads[idx] = lead;
+      }catch(err){ showToast(err.message); return; }
+      showToast('Moved to Pipeline');
+      renderFreshList();
+    });
+  });
+}
+
+/* ============================= DELETED ============================= */
+async function renderDeleted(){
+  const c = document.getElementById('deletedContent');
+  if(!can('delete')){ c.innerHTML = `<div class="empty"><h3>No access</h3><div>Only accounts with delete access can view the Deleted space.</div></div>`; return; }
+  let deletedLeads = [], deletedQuotes = [];
+  try{
+    const [leadsRes, quotesRes] = await Promise.all([
+      api('/leads?deleted=1'),
+      api('/quotations?deleted=1'),
+    ]);
+    deletedLeads = leadsRes.leads;
+    deletedQuotes = quotesRes.quotations;
+  }catch(err){ c.innerHTML = `<div class="empty"><h3>Couldn't load Deleted</h3><div>${esc(err.message)}</div></div>`; return; }
+
+  c.innerHTML = `
+    <div class="section-title"><h2>Deleted Leads</h2></div>
+    ${deletedLeads.length ? `<div id="deletedLeadsList"></div>` : `<div class="empty"><h3>Nothing here</h3><div>Deleted leads show up here instead of vanishing, so you can restore one if it was a mistake.</div></div>`}
+
+    <div class="section-title" style="margin-top:22px;"><h2>Deleted Quotations</h2></div>
+    ${deletedQuotes.length ? `<div id="deletedQuotesList"></div>` : `<div class="empty"><h3>Nothing here</h3></div>`}
+  `;
+
+  if(deletedLeads.length){
+    document.getElementById('deletedLeadsList').innerHTML = deletedLeads.map(l=>`
+      <div class="list-row" data-id="${l.id}">
+        <span class="lname">${esc(l.leadName)||'Unnamed lead'}</span>
+        <span class="lmeta">${esc(l.company)||'—'}</span>
+        <span class="lmeta">Deleted by ${esc(l.deletedBy)||'—'}</span>
+        <span class="lmeta">${fmtLogWhen(l.deletedAt)}</span>
+        <button class="btn btn-light btn-sm restore-lead" data-id="${l.id}">↺ Restore</button>
+      </div>
+    `).join('');
+    document.getElementById('deletedLeadsList').querySelectorAll('.restore-lead').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        try{ await api(`/leads/${btn.dataset.id}/restore`, { method:'POST' }); }
+        catch(err){ showToast(err.message); return; }
+        showToast('Lead restored');
+        renderDeleted();
+      });
+    });
+  }
+  if(deletedQuotes.length){
+    document.getElementById('deletedQuotesList').innerHTML = deletedQuotes.map(q=>`
+      <div class="list-row" data-id="${q.id}">
+        <span class="lname">${esc(q.company)||'—'}</span>
+        <span class="lmeta">${esc(q.docId)||'—'}</span>
+        <span class="lmeta">Deleted by ${esc(q.deletedBy)||'—'}</span>
+        <span class="lmeta">${fmtLogWhen(q.deletedAt)}</span>
+        <button class="btn btn-light btn-sm restore-quote" data-id="${q.id}">↺ Restore</button>
+      </div>
+    `).join('');
+    document.getElementById('deletedQuotesList').querySelectorAll('.restore-quote').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        try{ await api(`/quotations/${btn.dataset.id}/restore`, { method:'POST' }); }
+        catch(err){ showToast(err.message); return; }
+        showToast('Quotation restored');
+        renderDeleted();
+      });
+    });
+  }
+}
+
+/* ============================= EMPLOYEES ============================= */
+async function renderEmployees(){
+  const c = document.getElementById('employeesContent');
+  if(!isAdmin()){ c.innerHTML = `<div class="empty"><h3>Admins only</h3><div>Ask your Admin for access to the Employees tab.</div></div>`; return; }
+  let employees = [], logins = [];
+  try{
+    const [usersRes, loginsRes] = await Promise.all([ api('/users'), api('/users/logins') ]);
+    employees = usersRes.users;
+    logins = loginsRes.logins;
+  }catch(err){ c.innerHTML = `<div class="empty"><h3>Couldn't load Employees</h3><div>${esc(err.message)}</div></div>`; return; }
+
+  c.innerHTML = `
+    <div class="section-title"><h2>Employees</h2></div>
+    <div class="quote-cards" id="employeeCards"></div>
+    <div class="section-title" style="margin-top:22px;"><h2>Recent Logins</h2></div>
+    <div id="employeeLogins"></div>
+  `;
+  document.getElementById('employeeCards').innerHTML = employees.map(u=>{
+    const assignedAsSetter = STATE.leads.filter(l=>l.setterName===u.name).length;
+    const assignedAsCloser = STATE.leads.filter(l=>l.closerName===u.name).length;
+    return `
+    <div class="quote-card employee-card" data-id="${u.id}">
+      <h4>${esc(u.name)}</h4>
+      <div class="qmeta">@${esc(u.username)} · ${esc(ROLE_PRESETS[u.role]?.label||u.role)}</div>
+      ${u.phone ? `<div class="qmeta">${telLink(u.phone)}</div>` : ''}
+      ${u.email ? `<div class="qmeta">${esc(u.email)}</div>` : ''}
+      <div class="qmeta">Joined: ${u.joinDate?fmtDate(u.joinDate):'—'}</div>
+      <div class="qmeta">Last login: ${u.lastLoginAt?fmtLogWhen(u.lastLoginAt):'Never'}</div>
+      <div class="qmeta">${assignedAsSetter} as setter · ${assignedAsCloser} as closer</div>
+      <button class="btn btn-light btn-sm employee-edit" data-id="${u.id}" style="margin-top:8px;">Edit profile</button>
+    </div>
+  `;}).join('');
+  document.getElementById('employeeCards').querySelectorAll('.employee-edit').forEach(btn=>{
+    btn.addEventListener('click', ()=> openEmployeeEditModal(employees.find(u=>u.id===btn.dataset.id)));
+  });
+  const loginRows = logins.slice(0,50);
+  document.getElementById('employeeLogins').innerHTML = loginRows.length ? `
+    <table><thead><tr><th>Employee</th><th>Logged in at</th></tr></thead><tbody>
+    ${loginRows.map(l=>`<tr><td>${esc(l.userName)}</td><td>${fmtLogWhen(l.at)}</td></tr>`).join('')}
+    </tbody></table>
+  ` : `<div class="empty"><h3>No logins recorded yet</h3></div>`;
+}
+function openEmployeeEditModal(user){
+  if(!user) return;
+  document.getElementById('employeeEditTitle').textContent = `Edit ${user.name}`;
+  document.getElementById('employeeEditBody').innerHTML = `
+    <div class="form-grid">
+      ${fieldRow('Phone', `<input type="tel" id="emp_phone" value="${esc(user.phone||'')}">`)}
+      ${fieldRow('Email', `<input type="email" id="emp_email" value="${esc(user.email||'')}">`)}
+      ${fieldRow('Join Date', `<input type="date" id="emp_joinDate" value="${user.joinDate||''}">`)}
+    </div>
+  `;
+  document.getElementById('employeeEditBg').classList.add('open');
+  document.getElementById('employeeEditBg')._userId = user.id;
+}
+function closeEmployeeEditModal(){ document.getElementById('employeeEditBg').classList.remove('open'); }
+document.getElementById('employeeEditClose').addEventListener('click', closeEmployeeEditModal);
+document.getElementById('employeeEditCancel').addEventListener('click', closeEmployeeEditModal);
+document.getElementById('employeeEditSave').addEventListener('click', async ()=>{
+  const userId = document.getElementById('employeeEditBg')._userId;
+  if(!userId) return;
+  const phone = document.getElementById('emp_phone').value.trim();
+  const email = document.getElementById('emp_email').value.trim();
+  const joinDate = document.getElementById('emp_joinDate').value;
+  try{ await api(`/users/${userId}`, { method:'PATCH', body: JSON.stringify({ phone, email, joinDate }) }); }
+  catch(err){ showToast(err.message); return; }
+  closeEmployeeEditModal();
+  showToast('Employee profile updated');
+  renderEmployees();
+});
+
 /* ============================= LEAD LOG (TABLE) ============================= */
 const LOG_COLS = [
   {k:'leadName', l:'Lead'}, {k:'company', l:'Company'}, {k:'status', l:'Status'}, {k:'source', l:'Source'},
@@ -2164,6 +2486,7 @@ function getLogFiltered(){
   const from = document.getElementById('lf_from')?.value||'';
   const to = document.getElementById('lf_to')?.value||'';
   return STATE.leads.filter(l=>{
+    if(l.bucket === 'fresh') return false;
     if(logCategoryFilter.size && !logCategoryFilter.has(l.status)) return false;
     if(rep && l.setterName!==rep && l.closerName!==rep) return false;
     if(source && l.source!==source) return false;
@@ -2255,6 +2578,7 @@ function getDashFiltered(){
   const from = document.getElementById('df_from')?.value||'';
   const to = document.getElementById('df_to')?.value||'';
   const leads = STATE.leads.filter(l=>{
+    if(l.bucket === 'fresh') return false;
     if(rep && l.setterName!==rep && l.closerName!==rep) return false;
     if(source && l.source!==source) return false;
     if(from && l.dateCreated && l.dateCreated < from) return false;
@@ -2409,7 +2733,12 @@ function renderDash(){
         </div>`).join('') : '<div class="empty" style="padding:20px;">Nothing aging — nice work.</div>'}
       </div>
     </div>
+
+    <div class="section-title" style="margin-top:22px;"><h2>Call Log</h2></div>
+    <div id="callLogSection"></div>
   `;
+
+  renderCallLogTable();
 
   if(lossChart) lossChart.destroy();
   const ctx = document.getElementById('lossChartEl');
@@ -2584,7 +2913,10 @@ async function renderLogin(){
     return;
   }
 
+  const wasInactivityLogout = localStorage.getItem('PIPELINE_CRM_inactivity_logout');
+  if(wasInactivityLogout) localStorage.removeItem('PIPELINE_CRM_inactivity_logout');
   body.innerHTML = `
+    ${wasInactivityLogout ? `<div style="background:rgba(230,168,63,.12); border:1px solid rgba(230,168,63,.3); color:var(--amber,#e6a83f); font-size:12px; padding:8px 10px; border-radius:8px; margin-bottom:10px;">You were logged out after a period of inactivity.</div>` : ''}
     <div class="fgroup"><label>Username</label><input type="text" id="login_username" autocomplete="username"></div>
     <div class="fgroup" style="margin-top:8px;"><label>Password</label><input type="password" id="login_password" autocomplete="current-password"></div>
     <div class="err-msg" id="loginErr" style="display:none;"></div>
@@ -2612,6 +2944,8 @@ async function afterLogin(){
   const u = currentUser();
   document.getElementById('userBadgeBtn').innerHTML = u ? `👤 ${esc(u.name)} <span class="role-badge role-${u.role}" style="margin-left:4px;">${ROLE_PRESETS[u.role]?.label||u.role}</span>` : '👤 —';
   document.getElementById('adminTabBtn').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('employeesTabBtn').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('deletedTabBtn').style.display = can('delete') ? '' : 'none';
   document.getElementById('newLeadBtn').style.opacity = can('create') ? '1':'.5';
   document.getElementById('logActivityBtn').style.opacity = can('create') ? '1':'.5';
   renderKanban();
@@ -2660,6 +2994,17 @@ async function renderAdmin(){
       </div>
     </div>
 
+    <div class="section-title"><h2>Security</h2></div>
+    <div class="panel">
+      <div style="font-size:12px;color:var(--slate-soft);margin-bottom:12px;">
+        Everyone is automatically logged out after this many minutes without any mouse, keyboard, or touch activity — useful on shared or mobile devices. Applies to every account.
+      </div>
+      <div class="fgroup" style="max-width:220px;">
+        <label>Inactivity Timeout (minutes)</label>
+        <input type="number" id="admin_inactivityTimeout" min="1" max="1440" value="${STATE.settings.inactivityTimeoutMinutes||30}">
+      </div>
+    </div>
+
     <div class="section-title"><h2>Data &amp; sharing</h2></div>
     <div class="drive-panel">
       <p style="font-size:13px;margin:0 0 10px;">All leads, activity, and settings now live in one shared database on the server — everyone on this network sees the same live data, nothing to import/export between people anymore. Export XLSX is still there for backups or working offline.</p>
@@ -2669,6 +3014,12 @@ async function renderAdmin(){
   `;
   document.getElementById('admin_exportForDrive').addEventListener('click', exportLeadsXLSX);
   document.getElementById('admin_seedDemo').addEventListener('click', seedDemoData);
+  document.getElementById('admin_inactivityTimeout').addEventListener('change', async (e)=>{
+    const n = Number(e.target.value);
+    if(!Number.isFinite(n) || n<1 || n>1440){ showToast('Enter a value between 1 and 1440 minutes'); return; }
+    try{ const { settings } = await api('/settings', { method:'PUT', body: JSON.stringify({ inactivityTimeoutMinutes: n }) }); STATE.settings = settings; showToast('Inactivity timeout updated'); }
+    catch(err){ showToast(err.message); }
+  });
   document.getElementById('admin_addUser').addEventListener('click', async ()=>{
     if(!requireAdminOrBlock()) return;
     const name = document.getElementById('admin_newName').value.trim();
@@ -2772,6 +3123,65 @@ document.getElementById('tutorialNext').addEventListener('click', ()=>{
 });
 
 /* ============================= BOOT ============================= */
+/* ============================= MOBILE BACK BUTTON ============================= */
+// Watches every modal-bg for its 'open' class instead of touching each
+// individual open()/close() function — so this works for every modal
+// (existing and future) with one piece of code. Opening a modal pushes a
+// history entry; the phone's back button then closes the modal instead of
+// leaving the app entirely. Login is excluded — it's the app's entry gate,
+// not a dismissible overlay, so back should behave natively there.
+(function setupModalBackButton(){
+  let historyDepth = 0;
+  let suppressPop = false;
+  function anyModalOpen(){ return !!document.querySelector('.modal-bg.open:not(#loginBg)'); }
+  const observer = new MutationObserver(mutations=>{
+    mutations.forEach(m=>{
+      if(m.attributeName !== 'class') return;
+      const el = m.target;
+      if(!el.classList.contains('modal-bg') || el.id==='loginBg') return;
+      const isOpen = el.classList.contains('open');
+      const wasOpen = (m.oldValue||'').split(' ').includes('open');
+      if(isOpen && !wasOpen){
+        historyDepth++;
+        history.pushState({crmModalDepth: historyDepth}, '');
+      } else if(!isOpen && wasOpen && !suppressPop){
+        // Closed via UI (X/Cancel/Save) rather than the back button —
+        // consume the history entry we pushed so back-button presses
+        // don't pile up needing to be pressed twice.
+        if(historyDepth > 0){ historyDepth--; history.back(); }
+      }
+    });
+  });
+  document.querySelectorAll('.modal-bg').forEach(el=>{
+    if(el.id==='loginBg') return;
+    observer.observe(el, { attributes:true, attributeFilter:['class'], attributeOldValue:true });
+  });
+  window.addEventListener('popstate', ()=>{
+    if(anyModalOpen()){
+      suppressPop = true;
+      document.querySelectorAll('.modal-bg.open').forEach(el=>{ if(el.id!=='loginBg') el.classList.remove('open'); });
+      historyDepth = Math.max(0, historyDepth-1);
+      setTimeout(()=>{ suppressPop = false; }, 0);
+    }
+  });
+})();
+
+/* ============================= INACTIVITY AUTO-LOGOUT ============================= */
+let lastActivityAt = Date.now();
+['mousemove','keydown','mousedown','click','touchstart','scroll'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{ lastActivityAt = Date.now(); }, { passive:true });
+});
+setInterval(async ()=>{
+  if(!authToken) return; // not logged in — nothing to expire
+  const timeoutMin = (STATE.settings && STATE.settings.inactivityTimeoutMinutes) || 30;
+  if(Date.now() - lastActivityAt > timeoutMin*60*1000){
+    localStorage.setItem('PIPELINE_CRM_inactivity_logout','1');
+    try{ await api('/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
+    clearSession();
+    location.reload();
+  }
+}, 30000);
+
 (async function boot(){
   if(authToken){
     try{

@@ -53,11 +53,12 @@ const DEFAULT_QUOTATION_DEFAULTS = {
 };
 
 const EMPTY = {
-  users: [],      // {id, name, username, passwordHash, role, perms, createdAt}
+  users: [],      // {id, name, username, passwordHash, role, perms, createdAt, phone, email, joinDate}
   leads: [],       // see LEAD_FIELDS below
   activity: [],    // {id, date, setter, dials, dms, conversations, createdBy}
   quotations: [],  // see QUOTATION_FIELDS in quotation-routes.js
-  settings: { revenueGoal: 100000, commissionBase: 'cash', quotationDefaults: DEFAULT_QUOTATION_DEFAULTS },
+  loginLogs: [],   // {id, userId, userName, at} — one entry per successful login
+  settings: { revenueGoal: 100000, commissionBase: 'cash', inactivityTimeoutMinutes: 30, quotationDefaults: DEFAULT_QUOTATION_DEFAULTS },
   sessions: []     // {token, userId, createdAt, expiresAt}
 };
 
@@ -73,6 +74,7 @@ let cache = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
 // backfill any keys added after a db.json already existed
 for (const k of Object.keys(EMPTY)) if (!(k in cache)) cache[k] = EMPTY[k];
 if (!cache.settings.quotationDefaults) cache.settings.quotationDefaults = DEFAULT_QUOTATION_DEFAULTS;
+if (!cache.settings.inactivityTimeoutMinutes) cache.settings.inactivityTimeoutMinutes = 30;
 
 let writeQueue = Promise.resolve();
 function persist() {

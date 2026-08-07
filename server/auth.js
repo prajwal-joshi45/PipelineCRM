@@ -14,7 +14,11 @@ const USERNAME_RE = /^[a-z0-9._-]{3,20}$/;
 
 function publicUser(u) {
   if (!u) return null;
-  return { id: u.id, name: u.name, username: u.username, role: u.role, perms: u.perms };
+  return {
+    id: u.id, name: u.name, username: u.username, role: u.role, perms: u.perms,
+    phone: u.phone || '', email: u.email || '', joinDate: u.joinDate || '',
+    lastLoginAt: u.lastLoginAt || null, createdAt: u.createdAt,
+  };
 }
 
 function createSession(userId) {
@@ -23,6 +27,13 @@ function createSession(userId) {
   db.raw.sessions.push({ token, userId, createdAt: now, expiresAt: now + SESSION_TTL_MS });
   // opportunistically drop expired sessions so the file doesn't grow forever
   db.raw.sessions = db.raw.sessions.filter(s => s.expiresAt > now);
+  // Login time tracking: one row per successful login, plus a quick
+  // lastLoginAt on the user record itself so the Employees tab doesn't have
+  // to scan the whole log just to show "last seen".
+  const user = db.raw.users.find(u => u.id === userId);
+  const nowIso = new Date(now).toISOString();
+  db.raw.loginLogs.push({ id: 'LOGIN' + now.toString(36) + Math.random().toString(36).slice(2, 6), userId, userName: user ? user.name : 'Unknown', at: nowIso });
+  if (user) user.lastLoginAt = nowIso;
   return db.persist().then(() => token);
 }
 

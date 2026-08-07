@@ -12,7 +12,7 @@ router.get('/', (req, res) => {
 // Server-enforced admin-only, per the earlier decision to disable these
 // inputs for non-admins in the UI — this is the check that actually matters.
 router.put('/', requireAdmin, async (req, res) => {
-  const { revenueGoal, commissionBase, quotationDefaults } = req.body || {};
+  const { revenueGoal, commissionBase, inactivityTimeoutMinutes, quotationDefaults } = req.body || {};
   if (revenueGoal !== undefined) {
     const n = Number(revenueGoal);
     if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'Revenue goal must be a positive number' });
@@ -21,6 +21,11 @@ router.put('/', requireAdmin, async (req, res) => {
   if (commissionBase !== undefined) {
     if (!['cash', 'deal'].includes(commissionBase)) return res.status(400).json({ error: 'commissionBase must be "cash" or "deal"' });
     db.raw.settings.commissionBase = commissionBase;
+  }
+  if (inactivityTimeoutMinutes !== undefined) {
+    const n = Number(inactivityTimeoutMinutes);
+    if (!Number.isFinite(n) || n < 1 || n > 1440) return res.status(400).json({ error: 'Inactivity timeout must be between 1 and 1440 minutes' });
+    db.raw.settings.inactivityTimeoutMinutes = n;
   }
   // quotationDefaults is a whole-object replace — the client always sends the
   // full edited defaults form, same pattern as the packages/scanners arrays

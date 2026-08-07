@@ -12,8 +12,15 @@ router.get('/', requireAdmin, (req, res) => {
   res.json({ users: db.raw.users.map(publicUser) });
 });
 
+// Login time tracking — who logged in and when. Admin-only, same as the
+// rest of the team-management surface.
+router.get('/logins', requireAdmin, (req, res) => {
+  const logs = db.raw.loginLogs.slice().sort((a, b) => new Date(b.at) - new Date(a.at));
+  res.json({ logins: logs.slice(0, 500) });
+});
+
 router.post('/', requireAdmin, async (req, res) => {
-  const { name, username, password, role } = req.body || {};
+  const { name, username, password, role, phone, email, joinDate } = req.body || {};
   const uname = (username || '').trim().toLowerCase();
   if (!name || !name.trim()) return res.status(400).json({ error: 'Enter a display name' });
   if (!uname || !USERNAME_RE.test(uname)) return res.status(400).json({ error: 'Username: 3-20 chars, letters/numbers/./_/- only' });
@@ -25,6 +32,7 @@ router.post('/', requireAdmin, async (req, res) => {
     id: db.id('U'), name: name.trim(), username: uname,
     passwordHash: await hashPassword(password),
     role, perms: { ...ROLE_PRESETS[role].perms }, createdAt: Date.now(),
+    phone: (phone || '').trim(), email: (email || '').trim(), joinDate: joinDate || '',
   };
   db.raw.users.push(user);
   await db.persist();
@@ -35,7 +43,7 @@ router.post('/', requireAdmin, async (req, res) => {
 router.patch('/:id', requireAdmin, async (req, res) => {
   const user = db.raw.users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { role, perms, password } = req.body || {};
+  const { role, perms, password, phone, email, joinDate } = req.body || {};
   if (role) {
     if (!ROLE_PRESETS[role]) return res.status(400).json({ error: 'Invalid role' });
     user.role = role;
@@ -48,6 +56,9 @@ router.patch('/:id', requireAdmin, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     user.passwordHash = await hashPassword(password);
   }
+  if (phone !== undefined) user.phone = String(phone).trim();
+  if (email !== undefined) user.email = String(email).trim();
+  if (joinDate !== undefined) user.joinDate = joinDate;
   await db.persist();
   res.json({ user: publicUser(user) });
 });

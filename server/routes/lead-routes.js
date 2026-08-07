@@ -10,7 +10,7 @@ const MONEY_FIELDS = ['depositAmount','totalDealValue','cashCollected','datePaid
 const LEAD_FIELDS = [
   'leadName','company','email','phone','source','status','setterName','closerName',
   'dateCreated','firstContactDateTime','dateMeetingBooked','dateOfMeeting','meetingTime','lastTouchDate',
-  'meetingStatus','offerMade','saleType','lossReason','remarks',
+  'meetingStatus','offerMade','saleType','lossReason','remarks','bucket',
   'depositAmount','totalDealValue','cashCollected','datePaidInFull','refundAmount','commissionPct',
 ];
 // Fields whose changes are worth calling out in a log's change summary —
@@ -18,14 +18,18 @@ const LEAD_FIELDS = [
 // leak numbers they don't have permission to see.
 const LOGGABLE_FIELDS = [
   'leadName','company','email','phone','source','status','setterName','closerName',
-  'dateMeetingBooked','dateOfMeeting','meetingTime','lastTouchDate','meetingStatus','offerMade','saleType','lossReason',
+  'dateMeetingBooked','dateOfMeeting','meetingTime','lastTouchDate','meetingStatus','offerMade','saleType','lossReason','bucket',
 ];
 const FIELD_LABELS = {
   leadName:'Lead Name', company:'Company', email:'Email', phone:'Phone', source:'Source', status:'Status',
   setterName:'Setter', closerName:'Closer', dateMeetingBooked:'Date Meeting Booked', dateOfMeeting:'Date of Meeting',
   meetingTime:'Meeting Time', lastTouchDate:'Last Touch Date', meetingStatus:'Meeting Status', offerMade:'Offer Made',
-  saleType:'Sale Type', lossReason:'Loss Reason',
+  saleType:'Sale Type', lossReason:'Loss Reason', bucket:'Lead Bucket',
 };
+// Once a lead reaches one of these statuses, entering a deposit amount
+// should no longer silently yank it backward into "Deposit" — Won/Lost/
+// Deposit itself are left alone.
+const STATUSES_NOT_AUTO_MOVED = ['Deposit', 'Won', 'Lost'];
 
 // Same masking the old client-side code did for money figures — now done
 // server-side, so a Setter account genuinely never receives the numbers in
@@ -55,6 +59,23 @@ function applyMeetingBookedDefault(before, data) {
   }
 }
 
+// A deposit amount showing up on a lead is a strong, unambiguous signal —
+// move it to the Deposit column automatically instead of waiting for
+// someone to drag the card, unless it's already further along (Won/Lost) or
+// the caller manually picked a different status in this same request. The
+// frontend form always resends `status` even when unchanged, so "explicit"
+// is judged by whether it actually differs from the lead's current status —
+// not just by whether the field is present in the payload.
+function applyDepositAutoStatus(before, data) {
+  const depositJustSet = 'depositAmount' in data && Number(data.depositAmount) > 0;
+  if (!depositJustSet) return;
+  const currentStatus = (before && before.status) || 'New';
+  const statusManuallyChanged = 'status' in data && data.status !== currentStatus;
+  if (!statusManuallyChanged && !STATUSES_NOT_AUTO_MOVED.includes(currentStatus)) {
+    data.status = 'Deposit';
+  }
+}
+
 function summarizeChanges(before, data) {
   const changed = [];
   for (const f of LOGGABLE_FIELDS) {
@@ -80,7 +101,11 @@ function pushLog(lead, { by, remarks, changes, note }) {
 
 router.get('/', (req, res) => {
   const canMoney = !!(req.user.perms && req.user.perms.viewMoney);
-  res.json({ leads: db.raw.leads.map(l => maskLead(l, canMoney)) });
+  // Deleted leads are kept in the same array (soft delete) but hidden from
+  // the normal working views — the Deleted tab uses ?deleted=1 to see them.
+  const wantDeleted = req.query.deleted === '1';
+  const rows = db.raw.leads.filter(l => !!l.deleted === wantDeleted);
+  res.json({ leads: rows.map(l => maskLead(l, canMoney)) });
 });
 
 // Company duplicate check — used before creating a brand-new lead so the UI
@@ -91,7 +116,7 @@ router.get('/check-company', (req, res) => {
   const excludeId = req.query.excludeId;
   if (!name) return res.json({ match: null });
   const canMoney = !!(req.user.perms && req.user.perms.viewMoney);
-  const match = db.raw.leads.find(l => l.id !== excludeId && String(l.company || '').trim().toLowerCase() === name);
+  const match = db.raw.leads.find(l => !l.deleted && l.id !== excludeId && String(l.company || '').trim().toLowerCase() === name);
   res.json({ match: match ? maskLead(match, canMoney) : null });
 });
 
@@ -102,7 +127,8 @@ router.post('/', requirePerm('create'), async (req, res) => {
     return res.status(400).json({ error: 'Loss Reason is required when status is Lost' });
   }
   applyMeetingBookedDefault(null, data);
-  const lead = { id: db.id('L'), status: 'New', dateCreated: new Date().toISOString().slice(0, 10), ...data };
+  applyDepositAutoStatus(null, data);
+  const lead = { id: db.id('L'), status: 'New', bucket: 'pipeline', dateCreated: new Date().toISOString().slice(0, 10), ...data };
   pushLog(lead, { by: req.user.name, remarks: data.remarks, changes: ['Lead created'] });
   db.raw.leads.push(lead);
   await db.persist();
@@ -114,6 +140,7 @@ router.patch('/:id', requirePerm('edit'), async (req, res) => {
   if (!lead) return res.status(404).json({ error: 'Lead not found' });
   const data = sanitizeIncoming(req.body || {});
   applyMeetingBookedDefault(lead, data);
+  applyDepositAutoStatus(lead, data);
   const merged = { ...lead, ...data };
   if (merged.status === 'Lost' && !merged.lossReason) {
     return res.status(400).json({ error: 'Loss Reason is required when status is Lost' });
@@ -134,10 +161,50 @@ router.patch('/:id', requirePerm('edit'), async (req, res) => {
   res.json({ lead });
 });
 
+// Moves a Fresh lead into the working pipeline (Kanban) — sets bucket and,
+// if it's still sitting at New, leaves status alone so it lands in the
+// first pipeline column.
+router.post('/:id/promote', requirePerm('edit'), async (req, res) => {
+  const lead = db.raw.leads.find(l => l.id === req.params.id);
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+  lead.bucket = 'pipeline';
+  pushLog(lead, { by: req.user.name, changes: ['Moved to Pipeline from Fresh Leads'] });
+  await db.persist();
+  res.json({ lead });
+});
+
+// Soft delete: the record moves to the Deleted tab instead of vanishing —
+// who deleted it and when is kept right on the record.
 router.delete('/:id', requirePerm('delete'), async (req, res) => {
+  const lead = db.raw.leads.find(l => l.id === req.params.id && !l.deleted);
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+  lead.deleted = true;
+  lead.deletedAt = new Date().toISOString();
+  lead.deletedBy = req.user.name;
+  pushLog(lead, { by: req.user.name, changes: ['Deleted'] });
+  await db.persist();
+  res.json({ ok: true });
+});
+
+router.post('/:id/restore', requirePerm('delete'), async (req, res) => {
+  const lead = db.raw.leads.find(l => l.id === req.params.id && l.deleted);
+  if (!lead) return res.status(404).json({ error: 'Deleted lead not found' });
+  lead.deleted = false;
+  lead.deletedAt = null;
+  const restoredBy = req.user.name;
+  lead.deletedBy = null;
+  pushLog(lead, { by: restoredBy, changes: ['Restored from Deleted'] });
+  await db.persist();
+  res.json({ lead });
+});
+
+// Permanently erases a soft-deleted lead — admin-only, since this is the
+// one operation with no further undo.
+router.delete('/:id/permanent', requirePerm('delete'), async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   const before = db.raw.leads.length;
-  db.raw.leads = db.raw.leads.filter(l => l.id !== req.params.id);
-  if (db.raw.leads.length === before) return res.status(404).json({ error: 'Lead not found' });
+  db.raw.leads = db.raw.leads.filter(l => !(l.id === req.params.id && l.deleted));
+  if (db.raw.leads.length === before) return res.status(404).json({ error: 'Deleted lead not found' });
   await db.persist();
   res.json({ ok: true });
 });
@@ -159,11 +226,12 @@ router.post('/bulk-import', requirePerm('create'), async (req, res) => {
     let existing = row.id ? db.raw.leads.find(l => l.id === row.id) : null;
     let matchedByCompany = false;
     if (!existing && data.company) {
-      existing = db.raw.leads.find(l => String(l.company || '').trim().toLowerCase() === String(data.company).trim().toLowerCase());
+      existing = db.raw.leads.find(l => !l.deleted && String(l.company || '').trim().toLowerCase() === String(data.company).trim().toLowerCase());
       if (existing) matchedByCompany = true;
     }
     if (existing) {
       applyMeetingBookedDefault(existing, data);
+      applyDepositAutoStatus(existing, data);
       const changes = summarizeChanges(existing, data);
       Object.assign(existing, data);
       pushLog(existing, {
@@ -176,9 +244,10 @@ router.post('/bulk-import', requirePerm('create'), async (req, res) => {
       if (matchedByCompany) mergedByCompany++;
     } else {
       applyMeetingBookedDefault(null, data);
+      applyDepositAutoStatus(null, data);
       // db.id('L') auto-generates an id for rows that arrived without one —
       // covers both a fresh sheet and a re-upload someone hand-edited.
-      const lead = { id: db.id('L'), status: 'New', dateCreated: new Date().toISOString().slice(0, 10), ...data };
+      const lead = { id: db.id('L'), status: 'New', bucket: 'pipeline', dateCreated: new Date().toISOString().slice(0, 10), ...data };
       pushLog(lead, { by: req.user.name, remarks: data.remarks, changes: ['Lead created via bulk import'] });
       db.raw.leads.push(lead);
       created++;

@@ -20,8 +20,27 @@ router.post('/', requirePerm('create'), async (req, res) => {
     dms: Number(dms) || 0,
     conversations: Number(conversations) || 0,
     createdBy: req.user.id,
+    createdByName: req.user.name,
   };
   db.raw.activity.push(row);
+  await db.persist();
+  res.json({ activity: row });
+});
+
+router.patch('/:id', requirePerm('edit'), async (req, res) => {
+  const row = db.raw.activity.find(a => a.id === req.params.id);
+  if (!row) return res.status(404).json({ error: 'Activity row not found' });
+  const { date, setter, dials, dms, conversations } = req.body || {};
+  if (setter !== undefined) {
+    if (!setter.trim()) return res.status(400).json({ error: 'Enter a setter name' });
+    row.setter = setter.trim();
+  }
+  if (date !== undefined) row.date = date;
+  if (dials !== undefined) row.dials = Number(dials) || 0;
+  if (dms !== undefined) row.dms = Number(dms) || 0;
+  if (conversations !== undefined) row.conversations = Number(conversations) || 0;
+  row.updatedBy = req.user.name;
+  row.updatedAt = new Date().toISOString();
   await db.persist();
   res.json({ activity: row });
 });
