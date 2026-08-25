@@ -345,7 +345,8 @@ const lastKnownData = {};
 let lastKnownSettings = null;
 
 for (const collection of ARRAY_COLLECTIONS) {
-  lastKnownIds[collection] = new Set();
+    lastKnownIds[collection] = new Set();
+    lastKnownData[collection] = new Map();
 }
 
 
@@ -384,6 +385,16 @@ async function load() {
 
     lastKnownIds[collection] = ids;
 
+    const snapshotData = new Map();
+
+for (const row of rows) {
+    snapshotData.set(
+        row.id,
+        JSON.parse(JSON.stringify(row))
+    );
+}
+
+lastKnownData[collection] = snapshotData;
     console.log(
       `Firestore: ${collection} loaded (${rows.length} records)`
     );
@@ -434,6 +445,9 @@ async function load() {
     cache.settings.inactivityTimeoutMinutes = 30;
   }
 
+  lastKnownSettings = JSON.parse(
+  JSON.stringify(cache.settings)
+);
   console.log(
     'Firestore: database load completed.'
   );
