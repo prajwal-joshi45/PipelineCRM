@@ -10,6 +10,7 @@ const settingsRoutes = require('./routes/settings-routes');
 const quotationRoutes = require('./routes/quotation-routes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '5mb' }));
 
