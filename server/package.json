@@ -9,9 +9,10 @@
     "setup": "node scripts/create-admin.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
+    "firebase-admin": "^14.3.0",
     "jszip": "^3.10.1"
   }
 }
