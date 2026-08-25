@@ -10,13 +10,16 @@ const settingsRoutes = require('./routes/settings-routes');
 const quotationRoutes = require('./routes/quotation-routes');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '5mb' })); // 5mb headroom for XLSX bulk-import payloads
+app.use(express.json({ limit: '5mb' }));
 
-// Slow down brute-force guessing on login/setup specifically. Everything
-// else is behind requireAuth anyway.
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/setup', authLimiter);
 
@@ -27,12 +30,14 @@ app.use('/api/activity', activityRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/quotations', quotationRoutes);
 
-// Serve the frontend from the same origin/port as the API, so there's no
-// CORS setup needed and everyone on the network just hits one address.
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+
+  res.sendFile(
+    path.join(__dirname, 'public', 'index.html')
+  );
 });
 
 app.use((err, req, res, next) => {
@@ -40,16 +45,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Server error' });
 });
 
-const db = require('./db');
-
-db.ready()
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Pipeline CRM server running:`);
-
-    });
-  })
-  .catch(err => {
-    console.error('Failed to start: could not load data from Firestore.', err);
-    process.exit(1);
-  });
+module.exports = app;
