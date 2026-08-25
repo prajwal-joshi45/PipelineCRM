@@ -439,26 +439,16 @@ async function load() {
 // ============================================================================
 // PERSIST MEMORY → FIRESTORE
 // ============================================================================
-
-async function persist() {
-  console.log(
-    'Firestore: persisting changes...'
-  );
+ async function persist() {
+  console.log('Firestore: checking for changes...');
 
   const operations = [];
-
-
-  // --------------------------------------------------------------------------
-  // ARRAY COLLECTIONS
-  // --------------------------------------------------------------------------
 
   for (const collection of ARRAY_COLLECTIONS) {
     const rows = cache[collection] || [];
 
     const currentIds = new Set();
 
-
-    // Upserts
     for (const row of rows) {
       if (!row || !row.id) {
         continue;
@@ -466,31 +456,33 @@ async function persist() {
 
       currentIds.add(row.id);
 
-      const {
-        id,
-        ...data
-      } = row;
+      const previous =
+        lastKnownData[collection].get(row.id);
 
-      operations.push({
-        type: 'set',
+      // Only write if the document is new or changed.
+      if (
+        !previous ||
+        JSON.stringify(previous) !== JSON.stringify(row)
+      ) {
+        const { id, ...data } = row;
 
-        ref: firestore
-          .collection(collection)
-          .doc(id),
-
-        data
-      });
+        operations.push({
+          type: 'set',
+          ref: firestore
+            .collection(collection)
+            .doc(id),
+          data
+        });
+      }
     }
 
-
-    // Deletes
+    // Detect deletions.
     for (
       const oldId of lastKnownIds[collection]
     ) {
       if (!currentIds.has(oldId)) {
         operations.push({
           type: 'delete',
-
           ref: firestore
             .collection(collection)
             .doc(oldId)
@@ -498,39 +490,47 @@ async function persist() {
       }
     }
 
+    // Update local snapshots.
+    const newSnapshot = new Map();
 
-    lastKnownIds[collection] =
-      currentIds;
+    for (const row of rows) {
+      if (row && row.id) {
+        newSnapshot.set(
+          row.id,
+          JSON.parse(JSON.stringify(row))
+        );
+      }
+    }
+
+    lastKnownData[collection] = newSnapshot;
+    lastKnownIds[collection] = currentIds;
   }
 
+  // Settings
+  if (
+    JSON.stringify(cache.settings) !==
+    JSON.stringify(lastKnownSettings)
+  ) {
+    operations.push({
+      type: 'set',
+      ref: SETTINGS_DOC,
+      data: cache.settings
+    });
 
-  // --------------------------------------------------------------------------
-  // SETTINGS
-  // --------------------------------------------------------------------------
-
-  operations.push({
-    type: 'set',
-
-    ref: SETTINGS_DOC,
-
-    data:
-      cache.settings ||
+    lastKnownSettings =
       JSON.parse(
-        JSON.stringify(
-          EMPTY.settings
-        )
-      )
-  });
+        JSON.stringify(cache.settings)
+      );
+  }
 
+  if (operations.length === 0) {
+    console.log(
+      'Firestore: no changes to persist.'
+    );
 
-  // --------------------------------------------------------------------------
-  // FIRESTORE BATCHES
-  // --------------------------------------------------------------------------
+    return;
+  }
 
-  // Firestore allows a maximum of 500
-  // operations per batch.
-  //
-  // Keep below the limit.
   const BATCH_SIZE = 450;
 
   for (
@@ -547,15 +547,11 @@ async function persist() {
     const batch =
       firestore.batch();
 
-    for (
-      const operation of chunk
-    ) {
+    for (const operation of chunk) {
       if (
         operation.type === 'delete'
       ) {
-        batch.delete(
-          operation.ref
-        );
+        batch.delete(operation.ref);
       } else {
         batch.set(
           operation.ref,
@@ -567,12 +563,12 @@ async function persist() {
     await batch.commit();
 
     console.log(
-      `Firestore: committed batch ${Math.floor(start / BATCH_SIZE) + 1} (${chunk.length} operations)`
+      `Firestore: committed ${chunk.length} changes.`
     );
   }
 
   console.log(
-    `Firestore: persist completed (${operations.length} operations).`
+    `Firestore: persist completed (${operations.length} changes).`
   );
 }
 
