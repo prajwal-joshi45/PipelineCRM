@@ -40,8 +40,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Server error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Pipeline CRM server running:`);
-  console.log(`  On this machine:   http://localhost:${PORT}`);
-  console.log(`  On your network:   http://<this-computer's-LAN-IP>:${PORT}  (find it with 'ipconfig' / 'ifconfig')`);
-});
+const db = require('./db');
+
+db.ready()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Pipeline CRM server running:`);
+
+    });
+  })
+  .catch(err => {
+    console.error('Failed to start: could not load data from Firestore.', err);
+    process.exit(1);
+  });

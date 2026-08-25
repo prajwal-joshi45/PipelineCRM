@@ -1,18 +1,42 @@
-// Simple JSON-file datastore. No native compilation needed (unlike sqlite
-// drivers), which matters when this runs on a low-end laptop. Fine for a
-// handful of concurrent users; all writes are serialized through a queue
-// below so two requests can never interleave and corrupt the file.
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+// Firestore-backed datastore. Keeps the exact same interface as the old
+// JSON-file db.js (db.raw, db.id, db.persist, db.reload) so none of the
+// route files need to change.
+//
+// Design: cache stays an in-memory object that routes mutate SYNCHRONOUSLY,
+// exactly like before. On boot we load() everything from Firestore into
+// cache. Every persist() diffs cache against Firestore and writes the
+// difference (adds/updates/deletes) in one batch per collection.
+//
+// This only supports a single running server instance — same constraint
+// the old local-file version had. If you ever scale to multiple instances,
+// each route would need to read/write Firestore directly instead of a
+// shared in-memory cache.
 
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const admin = require('firebase-admin');
 
-// Default pricing shown the first time anyone opens the Quotation tab —
-// pulled from the Bizonet/Genuine Spares quotation template. Admins can
-// change all of this from Admin > Quotation Defaults; it's just a starting
-// point so nobody has to type prices in from scratch every time.
+// ---- Firebase init -------------------------------------------------------
+// Provide credentials via env var FIREBASE_SERVICE_ACCOUNT (the full JSON,
+// e.g. pasted into Render's env var UI) OR a local serviceAccountKey.json
+// file for local dev. Never commit the JSON file to git.
+function loadCredential() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    return admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT));
+  }
+  // eslint-disable-next-line global-require
+  const serviceAccount = require('./serviceAccountKey.json');
+  return admin.credential.cert(serviceAccount);
+}
+
+if (!admin.apps.length) {
+  admin.initializeApp({ credential: loadCredential() });
+}
+const firestore = admin.firestore();
+
+// Collections that behave like plain arrays of records with an `id` field.
+const ARRAY_COLLECTIONS = ['users', 'leads', 'activity', 'quotations', 'loginLogs', 'sessions'];
+// `settings` is a single object, stored as one document.
+const SETTINGS_DOC = firestore.collection('meta').doc('settings');
+
 const DEFAULT_QUOTATION_DEFAULTS = {
   fromCompany: 'Bizonet Technology Solutions',
   docPrefix: 'BZ-JO',
@@ -53,48 +77,96 @@ const DEFAULT_QUOTATION_DEFAULTS = {
 };
 
 const EMPTY = {
-  users: [],      // {id, name, username, passwordHash, role, perms, createdAt, phone, email, joinDate}
-  leads: [],       // see LEAD_FIELDS below
-  activity: [],    // {id, date, setter, dials, dms, conversations, createdBy}
-  quotations: [],  // see QUOTATION_FIELDS in quotation-routes.js
-  loginLogs: [],   // {id, userId, userName, at} — one entry per successful login
+  users: [],
+  leads: [],
+  activity: [],
+  quotations: [],
+  loginLogs: [],
   settings: { revenueGoal: 100000, commissionBase: 'cash', inactivityTimeoutMinutes: 30, quotationDefaults: DEFAULT_QUOTATION_DEFAULTS },
-  sessions: []     // {token, userId, createdAt, expiresAt}
+  sessions: [],
 };
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(EMPTY, null, 2));
-  }
-}
-ensureFile();
+let cache = JSON.parse(JSON.stringify(EMPTY));
+// Tracks which ids existed in Firestore as of the last load/persist, per
+// collection, so persist() knows what needs deleting vs upserting.
+let lastKnownIds = {};
+for (const c of ARRAY_COLLECTIONS) lastKnownIds[c] = new Set();
 
-let cache = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-// backfill any keys added after a db.json already existed
-for (const k of Object.keys(EMPTY)) if (!(k in cache)) cache[k] = EMPTY[k];
-if (!cache.settings.quotationDefaults) cache.settings.quotationDefaults = DEFAULT_QUOTATION_DEFAULTS;
-if (!cache.settings.inactivityTimeoutMinutes) cache.settings.inactivityTimeoutMinutes = 30;
-
-let writeQueue = Promise.resolve();
-function persist() {
-  writeQueue = writeQueue.then(() => new Promise((resolve, reject) => {
-    const tmp = DB_FILE + '.tmp';
-    fs.writeFile(tmp, JSON.stringify(cache, null, 2), (err) => {
-      if (err) return reject(err);
-      fs.rename(tmp, DB_FILE, (err2) => err2 ? reject(err2) : resolve());
+async function load() {
+  for (const col of ARRAY_COLLECTIONS) {
+    const snap = await firestore.collection(col).get();
+    const rows = [];
+    const ids = new Set();
+    snap.forEach(doc => {
+      rows.push({ id: doc.id, ...doc.data() });
+      ids.add(doc.id);
     });
-  }));
-  return writeQueue;
+    cache[col] = rows;
+    lastKnownIds[col] = ids;
+  }
+  const settingsSnap = await SETTINGS_DOC.get();
+  cache.settings = settingsSnap.exists
+    ? { ...EMPTY.settings, ...settingsSnap.data() }
+    : EMPTY.settings;
+  if (!cache.settings.quotationDefaults) cache.settings.quotationDefaults = DEFAULT_QUOTATION_DEFAULTS;
+  if (!cache.settings.inactivityTimeoutMinutes) cache.settings.inactivityTimeoutMinutes = 30;
+}
+
+// Diffs cache[col] against what we last saw in Firestore, then upserts
+// current rows and deletes rows that disappeared from the cache array
+// (covers your hard-delete routes, which do `.filter(...)` reassignment).
+async function persist() {
+  const batch = firestore.batch();
+  let writes = 0;
+
+  for (const col of ARRAY_COLLECTIONS) {
+    const rows = cache[col] || [];
+    const currentIds = new Set();
+    for (const row of rows) {
+      if (!row.id) continue; // shouldn't happen — db.id() always sets one
+      currentIds.add(row.id);
+      const { id, ...data } = row;
+      batch.set(firestore.collection(col).doc(id), data);
+      writes++;
+    }
+    for (const oldId of lastKnownIds[col]) {
+      if (!currentIds.has(oldId)) {
+        batch.delete(firestore.collection(col).doc(oldId));
+        writes++;
+      }
+    }
+    lastKnownIds[col] = currentIds;
+  }
+
+  batch.set(SETTINGS_DOC, cache.settings || EMPTY.settings);
+  writes++;
+
+  // Firestore batches cap at 500 writes; fine for a small-team CRM, but
+  // guard against silently dropping writes if you ever exceed it.
+  if (writes > 450) {
+    console.warn(`db.persist(): ${writes} writes in one batch — approaching Firestore's 500 limit.`);
+  }
+
+  await batch.commit();
 }
 
 function id(prefix) {
-  return prefix + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+  // Firestore doc IDs work fine as plain strings; keep your existing
+  // prefix+timestamp+random scheme so ids look the same as before.
+  return prefix + Date.now().toString(36) + Math.random().toString(16).slice(2, 10);
 }
+
+let ready = load().catch(err => {
+  console.error('Failed to load initial data from Firestore:', err);
+  throw err;
+});
 
 module.exports = {
   get raw() { return cache; },
   id,
   persist,
-  reload() { cache = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); },
+  reload: load,
+  // Await this once at server startup before accepting requests, so the
+  // first request isn't racing the initial Firestore load.
+  ready: () => ready,
 };
