@@ -31,16 +31,7 @@ app.use('/api/activity', activityRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/quotations', quotationRoutes);
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-
-  res.sendFile(
-    path.join(__dirname, 'public', 'index.html')
-  );
-});
-
+ 
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Server error' });
