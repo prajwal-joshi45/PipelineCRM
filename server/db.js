@@ -340,6 +340,10 @@ let cache = JSON.parse(
 // during the last successful load/persist.
 const lastKnownIds = {};
 
+const lastKnownData = {};
+
+let lastKnownSettings = null;
+
 for (const collection of ARRAY_COLLECTIONS) {
   lastKnownIds[collection] = new Set();
 }
