@@ -2,20 +2,29 @@
 //
 // Firestore-backed datastore for Pipeline CRM.
 //
-// Keeps the same interface used by the existing routes:
+// Keeps the same interface used by all existing routes:
 //   db.raw
 //   db.id()
 //   db.persist()
 //   db.reload()
 //   db.ready()
 //
-// Production / Vercel:
-//   FIREBASE_SERVICE_ACCOUNT environment variable
+// Firebase credentials are supplied through:
+//   FIREBASE_SERVICE_ACCOUNT
 //
 // IMPORTANT:
 // Never commit the Firebase service-account JSON/private key to GitHub.
 
-const admin = require('firebase-admin');
+const {
+  initializeApp,
+  getApps,
+  cert
+} = require('firebase-admin/app');
+
+const {
+  getFirestore
+} = require('firebase-admin/firestore');
+
 
 // ============================================================================
 // FIREBASE INITIALIZATION
@@ -58,8 +67,8 @@ function loadCredential() {
     );
   }
 
-  // Vercel environment variables may contain literal "\\n"
-  // characters instead of actual newline characters.
+  // Vercel may store the private key with literal \n characters.
+  // Convert them into actual newline characters.
   const privateKey = serviceAccount.private_key.replace(
     /\\n/g,
     '\n'
@@ -72,23 +81,38 @@ function loadCredential() {
     privateKeyLength: privateKey.length
   });
 
-  return admin.credential.cert({
+  return cert({
     projectId: serviceAccount.project_id,
     clientEmail: serviceAccount.client_email,
     privateKey
   });
 }
 
-try {
-  if (!admin.apps.length) {
-    console.log('Initializing Firebase Admin...');
 
-    admin.initializeApp({
+// Reuse an already-created Firebase app when Vercel
+// reuses the same serverless instance.
+let firebaseApp;
+
+try {
+  const existingApps = getApps();
+
+  if (existingApps.length > 0) {
+    firebaseApp = existingApps[0];
+
+    console.log(
+      'Firebase Admin: reusing existing app.'
+    );
+  } else {
+    console.log(
+      'Firebase Admin: initializing new app...'
+    );
+
+    firebaseApp = initializeApp({
       credential: loadCredential()
     });
 
     console.log(
-      'Firebase Admin initialized successfully.'
+      'Firebase Admin: initialized successfully.'
     );
   }
 } catch (err) {
@@ -102,11 +126,14 @@ try {
   throw err;
 }
 
-const firestore = admin.firestore();
+
+// Get Firestore for the initialized Firebase app.
+const firestore = getFirestore(firebaseApp);
 
 console.log(
   'Firestore initialized successfully.'
 );
+
 
 // ============================================================================
 // COLLECTIONS
@@ -125,6 +152,7 @@ const SETTINGS_DOC = firestore
   .collection('meta')
   .doc('settings');
 
+
 // ============================================================================
 // DEFAULT QUOTATION SETTINGS
 // ============================================================================
@@ -141,37 +169,43 @@ const DEFAULT_QUOTATION_DEFAULTS = {
   modules: [
     {
       title: 'Unloading Box',
-      desc: 'A webpage will be provided for unloading the boxes.',
+      desc:
+        'A webpage will be provided for unloading the boxes.',
       include: true
     },
 
     {
       title: 'Product Box Validation',
-      desc: 'It is a page for providing the rack location of the scanned products.',
+      desc:
+        'It is a page for providing the rack location of the scanned products.',
       include: true
     },
 
     {
       title: 'Loading of Orders',
-      desc: 'A page will be provided to load the .csv excel containing order information to the Bizonet Platform.',
+      desc:
+        'A page will be provided to load the .csv excel containing order information to the Bizonet Platform.',
       include: true
     },
 
     {
       title: 'Store Out Screen',
-      desc: 'A webpage will be provided which will help you in boxing the items picked as per the order.',
+      desc:
+        'A webpage will be provided which will help you in boxing the items picked as per the order.',
       include: true
     },
 
     {
       title: 'Dispatch',
-      desc: 'A webpage will be provided which will help you in dispatching the materials to your customer. Invoices will be available along with this functionality.',
+      desc:
+        'A webpage will be provided which will help you in dispatching the materials to your customer. Invoices will be available along with this functionality.',
       include: true
     },
 
     {
       title: 'Reports',
-      desc: 'Details of the scanned Orders, Manual entry will be provided over the reports.',
+      desc:
+        'Details of the scanned Orders, Manual entry will be provided over the reports.',
       include: true
     }
   ],
@@ -262,6 +296,7 @@ const DEFAULT_QUOTATION_DEFAULTS = {
   ]
 };
 
+
 // ============================================================================
 // EMPTY DATABASE
 // ============================================================================
@@ -291,6 +326,7 @@ const EMPTY = {
   sessions: []
 };
 
+
 // ============================================================================
 // IN-MEMORY CACHE
 // ============================================================================
@@ -299,16 +335,18 @@ let cache = JSON.parse(
   JSON.stringify(EMPTY)
 );
 
-// IDs that existed in Firestore during the last
-// successful load/persist.
+
+// Track IDs that existed in Firestore
+// during the last successful load/persist.
 const lastKnownIds = {};
 
 for (const collection of ARRAY_COLLECTIONS) {
   lastKnownIds[collection] = new Set();
 }
 
+
 // ============================================================================
-// LOAD FIRESTORE DATA
+// LOAD FIRESTORE → MEMORY
 // ============================================================================
 
 async function load() {
@@ -346,6 +384,7 @@ async function load() {
       `Firestore: ${collection} loaded (${rows.length} records)`
     );
   }
+
 
   // --------------------------------------------------------------------------
   // SETTINGS
@@ -396,24 +435,9 @@ async function load() {
   );
 }
 
+
 // ============================================================================
-// PERSIST DATA TO FIRESTORE
-// ============================================================================
-//
-// Existing routes modify db.raw synchronously:
-//
-//   db.raw.leads.push(...)
-//   Object.assign(lead, data)
-//   db.raw.activity = ...
-//
-// Then they call:
-//
-//   await db.persist()
-//
-// This function preserves that existing architecture.
-//
-// Firestore batches have a maximum of 500 operations.
-// We use 450 to leave safety headroom.
+// PERSIST MEMORY → FIRESTORE
 // ============================================================================
 
 async function persist() {
@@ -422,6 +446,7 @@ async function persist() {
   );
 
   const operations = [];
+
 
   // --------------------------------------------------------------------------
   // ARRAY COLLECTIONS
@@ -432,6 +457,7 @@ async function persist() {
 
     const currentIds = new Set();
 
+
     // Upserts
     for (const row of rows) {
       if (!row || !row.id) {
@@ -440,7 +466,10 @@ async function persist() {
 
       currentIds.add(row.id);
 
-      const { id, ...data } = row;
+      const {
+        id,
+        ...data
+      } = row;
 
       operations.push({
         type: 'set',
@@ -452,6 +481,7 @@ async function persist() {
         data
       });
     }
+
 
     // Deletes
     for (
@@ -468,9 +498,11 @@ async function persist() {
       }
     }
 
+
     lastKnownIds[collection] =
       currentIds;
   }
+
 
   // --------------------------------------------------------------------------
   // SETTINGS
@@ -484,14 +516,21 @@ async function persist() {
     data:
       cache.settings ||
       JSON.parse(
-        JSON.stringify(EMPTY.settings)
+        JSON.stringify(
+          EMPTY.settings
+        )
       )
   });
 
+
   // --------------------------------------------------------------------------
-  // COMMIT IN SAFE BATCHES
+  // FIRESTORE BATCHES
   // --------------------------------------------------------------------------
 
+  // Firestore allows a maximum of 500
+  // operations per batch.
+  //
+  // Keep below the limit.
   const BATCH_SIZE = 450;
 
   for (
@@ -508,7 +547,9 @@ async function persist() {
     const batch =
       firestore.batch();
 
-    for (const operation of chunk) {
+    for (
+      const operation of chunk
+    ) {
       if (
         operation.type === 'delete'
       ) {
@@ -535,6 +576,7 @@ async function persist() {
   );
 }
 
+
 // ============================================================================
 // ID GENERATOR
 // ============================================================================
@@ -548,6 +590,7 @@ function id(prefix) {
       .slice(2, 10)
   );
 }
+
 
 // ============================================================================
 // INITIAL DATABASE LOAD
@@ -563,8 +606,9 @@ let ready = load()
     throw err;
   });
 
+
 // ============================================================================
-// PUBLIC DATABASE INTERFACE
+// PUBLIC INTERFACE
 // ============================================================================
 
 module.exports = {
