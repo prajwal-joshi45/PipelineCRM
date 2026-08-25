@@ -1,5 +1,5 @@
-const app = require('../server');
-const db = require('../db');
+const app = require('../server/server');
+const db = require('../server/db');
 
 let readyPromise;
 
