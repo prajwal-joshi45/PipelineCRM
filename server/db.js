@@ -1,6 +1,6 @@
 // server/db.js
 //
-// Firestore-backed datastore.
+// Firestore-backed datastore for Pipeline CRM.
 //
 // Keeps the same interface used by the existing routes:
 //   db.raw
@@ -9,28 +9,24 @@
 //   db.reload()
 //   db.ready()
 //
-// Firebase credentials:
-//   Vercel / production:
-//     FIREBASE_SERVICE_ACCOUNT environment variable
-//
-//   Local development:
-//     You may also use FIREBASE_SERVICE_ACCOUNT locally.
+// Production / Vercel:
+//   FIREBASE_SERVICE_ACCOUNT environment variable
 //
 // IMPORTANT:
-// Never commit Firebase service-account JSON/private keys to GitHub.
+// Never commit the Firebase service-account JSON/private key to GitHub.
 
 const admin = require('firebase-admin');
 
-// -----------------------------------------------------------------------------
-// Firebase initialization
-// -----------------------------------------------------------------------------
+// ============================================================================
+// FIREBASE INITIALIZATION
+// ============================================================================
 
 function loadCredential() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (!raw) {
     throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT environment variable is not configured.'
+      'FIREBASE_SERVICE_ACCOUNT environment variable is missing.'
     );
   }
 
@@ -46,41 +42,75 @@ function loadCredential() {
 
   if (!serviceAccount.project_id) {
     throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT is missing project_id.'
+      'Firebase service account is missing "project_id".'
     );
   }
 
   if (!serviceAccount.client_email) {
     throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT is missing client_email.'
+      'Firebase service account is missing "client_email".'
     );
   }
 
   if (!serviceAccount.private_key) {
     throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT is missing private_key.'
+      'Firebase service account is missing "private_key".'
     );
   }
 
-  return admin.credential.cert(serviceAccount);
+  // Vercel environment variables may contain literal "\\n"
+  // characters instead of actual newline characters.
+  const privateKey = serviceAccount.private_key.replace(
+    /\\n/g,
+    '\n'
+  );
+
+  console.log('Firebase credentials loaded:', {
+    projectId: serviceAccount.project_id,
+    clientEmail: serviceAccount.client_email,
+    hasPrivateKey: !!privateKey,
+    privateKeyLength: privateKey.length
+  });
+
+  return admin.credential.cert({
+    projectId: serviceAccount.project_id,
+    clientEmail: serviceAccount.client_email,
+    privateKey
+  });
 }
 
 try {
   if (!admin.apps.length) {
+    console.log('Initializing Firebase Admin...');
+
     admin.initializeApp({
       credential: loadCredential()
     });
+
+    console.log(
+      'Firebase Admin initialized successfully.'
+    );
   }
 } catch (err) {
-  console.error('Firebase Admin initialization failed:', err.message);
+  console.error(
+    'Firebase Admin initialization failed:',
+    err.message
+  );
+
+  console.error(err.stack);
+
   throw err;
 }
 
 const firestore = admin.firestore();
 
-// -----------------------------------------------------------------------------
-// Collections
-// -----------------------------------------------------------------------------
+console.log(
+  'Firestore initialized successfully.'
+);
+
+// ============================================================================
+// COLLECTIONS
+// ============================================================================
 
 const ARRAY_COLLECTIONS = [
   'users',
@@ -95,9 +125,9 @@ const SETTINGS_DOC = firestore
   .collection('meta')
   .doc('settings');
 
-// -----------------------------------------------------------------------------
-// Default quotation settings
-// -----------------------------------------------------------------------------
+// ============================================================================
+// DEFAULT QUOTATION SETTINGS
+// ============================================================================
 
 const DEFAULT_QUOTATION_DEFAULTS = {
   fromCompany: 'Bizonet Technology Solutions',
@@ -114,26 +144,31 @@ const DEFAULT_QUOTATION_DEFAULTS = {
       desc: 'A webpage will be provided for unloading the boxes.',
       include: true
     },
+
     {
       title: 'Product Box Validation',
       desc: 'It is a page for providing the rack location of the scanned products.',
       include: true
     },
+
     {
       title: 'Loading of Orders',
       desc: 'A page will be provided to load the .csv excel containing order information to the Bizonet Platform.',
       include: true
     },
+
     {
       title: 'Store Out Screen',
       desc: 'A webpage will be provided which will help you in boxing the items picked as per the order.',
       include: true
     },
+
     {
       title: 'Dispatch',
       desc: 'A webpage will be provided which will help you in dispatching the materials to your customer. Invoices will be available along with this functionality.',
       include: true
     },
+
     {
       title: 'Reports',
       desc: 'Details of the scanned Orders, Manual entry will be provided over the reports.',
@@ -143,15 +178,20 @@ const DEFAULT_QUOTATION_DEFAULTS = {
 
   addOns: [
     {
-      title: 'Inward (Container Unloading, Box Validation, Product Racking)',
+      title:
+        'Inward (Container Unloading, Box Validation, Product Racking)',
       include: true
     },
+
     {
-      title: 'Outward (Order Pick up, Boxing)',
+      title:
+        'Outward (Order Pick up, Boxing)',
       include: true
     },
+
     {
-      title: 'Add-Ons (Logistics Management, Inventory Segregation) – Including in Package.',
+      title:
+        'Add-Ons (Logistics Management, Inventory Segregation) – Including in Package.',
       include: true
     }
   ],
@@ -166,6 +206,7 @@ const DEFAULT_QUOTATION_DEFAULTS = {
       recommended: false,
       include: true
     },
+
     {
       name: 'Gold',
       price: 140000,
@@ -175,6 +216,7 @@ const DEFAULT_QUOTATION_DEFAULTS = {
       recommended: true,
       include: true
     },
+
     {
       name: 'Platinum',
       price: 160000,
@@ -190,12 +232,15 @@ const DEFAULT_QUOTATION_DEFAULTS = {
 
   scanners: [
     {
-      name: 'Android Mobile Scanner (3GB/32GB, inc. GST)',
+      name:
+        'Android Mobile Scanner (3GB/32GB, inc. GST)',
       price: 25000,
       include: true
     },
+
     {
-      name: 'Android Mobile Scanner (4GB/64GB, inc. GST)',
+      name:
+        'Android Mobile Scanner (4GB/64GB, inc. GST)',
       price: 27100,
       include: true
     }
@@ -217,58 +262,71 @@ const DEFAULT_QUOTATION_DEFAULTS = {
   ]
 };
 
-// -----------------------------------------------------------------------------
-// Empty/default database
-// -----------------------------------------------------------------------------
+// ============================================================================
+// EMPTY DATABASE
+// ============================================================================
 
 const EMPTY = {
   users: [],
+
   leads: [],
+
   activity: [],
+
   quotations: [],
+
   loginLogs: [],
 
   settings: {
     revenueGoal: 100000,
+
     commissionBase: 'cash',
+
     inactivityTimeoutMinutes: 30,
 
-    quotationDefaults: DEFAULT_QUOTATION_DEFAULTS
+    quotationDefaults:
+      DEFAULT_QUOTATION_DEFAULTS
   },
 
   sessions: []
 };
 
-// -----------------------------------------------------------------------------
-// In-memory cache
-// -----------------------------------------------------------------------------
+// ============================================================================
+// IN-MEMORY CACHE
+// ============================================================================
 
 let cache = JSON.parse(
   JSON.stringify(EMPTY)
 );
 
-// IDs that existed in Firestore during the last load/persist.
+// IDs that existed in Firestore during the last
+// successful load/persist.
 const lastKnownIds = {};
 
 for (const collection of ARRAY_COLLECTIONS) {
   lastKnownIds[collection] = new Set();
 }
 
-// -----------------------------------------------------------------------------
-// Load Firestore → memory
-// -----------------------------------------------------------------------------
+// ============================================================================
+// LOAD FIRESTORE DATA
+// ============================================================================
 
 async function load() {
-  console.log('Firestore: starting database load...');
+  console.log(
+    'Firestore: starting database load...'
+  );
 
   for (const collection of ARRAY_COLLECTIONS) {
-    console.log(`Firestore: loading ${collection}...`);
+    console.log(
+      `Firestore: loading ${collection}...`
+    );
 
     const snapshot = await firestore
       .collection(collection)
       .get();
 
     const rows = [];
+
     const ids = new Set();
 
     snapshot.forEach(doc => {
@@ -281,6 +339,7 @@ async function load() {
     });
 
     cache[collection] = rows;
+
     lastKnownIds[collection] = ids;
 
     console.log(
@@ -288,13 +347,22 @@ async function load() {
     );
   }
 
-  console.log('Firestore: loading settings...');
+  // --------------------------------------------------------------------------
+  // SETTINGS
+  // --------------------------------------------------------------------------
 
-  const settingsSnapshot = await SETTINGS_DOC.get();
+  console.log(
+    'Firestore: loading settings...'
+  );
+
+  const settingsSnapshot =
+    await SETTINGS_DOC.get();
 
   if (settingsSnapshot.exists) {
     cache.settings = {
-      ...EMPTY.settings,
+      ...JSON.parse(
+        JSON.stringify(EMPTY.settings)
+      ),
       ...settingsSnapshot.data()
     };
   } else {
@@ -303,34 +371,61 @@ async function load() {
     );
   }
 
-  if (!cache.settings.quotationDefaults) {
+  if (
+    !cache.settings.quotationDefaults
+  ) {
     cache.settings.quotationDefaults =
       JSON.parse(
-        JSON.stringify(DEFAULT_QUOTATION_DEFAULTS)
+        JSON.stringify(
+          DEFAULT_QUOTATION_DEFAULTS
+        )
       );
   }
 
   if (
     !cache.settings.inactivityTimeoutMinutes ||
-    Number(cache.settings.inactivityTimeoutMinutes) < 1
+    Number(
+      cache.settings.inactivityTimeoutMinutes
+    ) < 1
   ) {
     cache.settings.inactivityTimeoutMinutes = 30;
   }
 
-  console.log('Firestore: database load completed.');
+  console.log(
+    'Firestore: database load completed.'
+  );
 }
 
-// -----------------------------------------------------------------------------
-// Persist memory → Firestore
+// ============================================================================
+// PERSIST DATA TO FIRESTORE
+// ============================================================================
 //
-// Uses batches of <= 450 writes so we stay safely below Firestore's
-// 500-operation batch limit.
-// -----------------------------------------------------------------------------
+// Existing routes modify db.raw synchronously:
+//
+//   db.raw.leads.push(...)
+//   Object.assign(lead, data)
+//   db.raw.activity = ...
+//
+// Then they call:
+//
+//   await db.persist()
+//
+// This function preserves that existing architecture.
+//
+// Firestore batches have a maximum of 500 operations.
+// We use 450 to leave safety headroom.
+// ============================================================================
 
 async function persist() {
-  console.log('Firestore: persisting changes...');
+  console.log(
+    'Firestore: persisting changes...'
+  );
 
   const operations = [];
+
+  // --------------------------------------------------------------------------
+  // ARRAY COLLECTIONS
+  // --------------------------------------------------------------------------
 
   for (const collection of ARRAY_COLLECTIONS) {
     const rows = cache[collection] || [];
@@ -349,18 +444,23 @@ async function persist() {
 
       operations.push({
         type: 'set',
+
         ref: firestore
           .collection(collection)
           .doc(id),
+
         data
       });
     }
 
     // Deletes
-    for (const oldId of lastKnownIds[collection]) {
+    for (
+      const oldId of lastKnownIds[collection]
+    ) {
       if (!currentIds.has(oldId)) {
         operations.push({
           type: 'delete',
+
           ref: firestore
             .collection(collection)
             .doc(oldId)
@@ -368,18 +468,30 @@ async function persist() {
       }
     }
 
-    lastKnownIds[collection] = currentIds;
+    lastKnownIds[collection] =
+      currentIds;
   }
 
-  // Settings
+  // --------------------------------------------------------------------------
+  // SETTINGS
+  // --------------------------------------------------------------------------
+
   operations.push({
     type: 'set',
+
     ref: SETTINGS_DOC,
-    data: cache.settings || EMPTY.settings
+
+    data:
+      cache.settings ||
+      JSON.parse(
+        JSON.stringify(EMPTY.settings)
+      )
   });
 
-  // Firestore batch maximum is 500 operations.
-  // Keep some safety headroom.
+  // --------------------------------------------------------------------------
+  // COMMIT IN SAFE BATCHES
+  // --------------------------------------------------------------------------
+
   const BATCH_SIZE = 450;
 
   for (
@@ -387,16 +499,22 @@ async function persist() {
     start < operations.length;
     start += BATCH_SIZE
   ) {
-    const chunk = operations.slice(
-      start,
-      start + BATCH_SIZE
-    );
+    const chunk =
+      operations.slice(
+        start,
+        start + BATCH_SIZE
+      );
 
-    const batch = firestore.batch();
+    const batch =
+      firestore.batch();
 
     for (const operation of chunk) {
-      if (operation.type === 'delete') {
-        batch.delete(operation.ref);
+      if (
+        operation.type === 'delete'
+      ) {
+        batch.delete(
+          operation.ref
+        );
       } else {
         batch.set(
           operation.ref,
@@ -417,9 +535,9 @@ async function persist() {
   );
 }
 
-// -----------------------------------------------------------------------------
-// ID generator
-// -----------------------------------------------------------------------------
+// ============================================================================
+// ID GENERATOR
+// ============================================================================
 
 function id(prefix) {
   return (
@@ -431,22 +549,23 @@ function id(prefix) {
   );
 }
 
-// -----------------------------------------------------------------------------
-// Initial database load
-// -----------------------------------------------------------------------------
+// ============================================================================
+// INITIAL DATABASE LOAD
+// ============================================================================
 
-let ready = load().catch(err => {
-  console.error(
-    'Firestore: initial database load failed:',
-    err
-  );
+let ready = load()
+  .catch(err => {
+    console.error(
+      'Firestore: initial database load failed:',
+      err
+    );
 
-  throw err;
-});
+    throw err;
+  });
 
-// -----------------------------------------------------------------------------
-// Public interface
-// -----------------------------------------------------------------------------
+// ============================================================================
+// PUBLIC DATABASE INTERFACE
+// ============================================================================
 
 module.exports = {
   get raw() {
