@@ -628,17 +628,32 @@ let kanbanView = "board";
 let authToken = localStorage.getItem('PIPELINE_CRM_token') || null;
 let STATE_CURRENT_USER = null; // full {id,name,username,role,perms} for whoever is logged in
 
-async function api(path, opts={}){
-  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
-  if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
-  const res = await fetch('/api'+path, Object.assign({}, opts, {headers}));
-  let data = null;
-  try{ data = await res.json(); }catch(e){ /* no body */ }
-  if(!res.ok){
-    if(res.status === 401){ clearSession(); renderLogin(); document.getElementById('loginBg').classList.add('open'); }
-    throw new Error((data && data.error) || `Request failed (${res.status})`);
-  }
-  return data;
+async function api(url, options = {}) {
+    const token = localStorage.getItem('token');
+
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+        ...options,
+        headers
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(
+            data.error || `Request failed (${response.status})`
+        );
+    }
+
+    return data;
 }
 function setSession(token, user){
   authToken = token;
