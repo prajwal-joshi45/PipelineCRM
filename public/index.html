@@ -629,7 +629,9 @@ let authToken = localStorage.getItem('PIPELINE_CRM_token') || null;
 let STATE_CURRENT_USER = null; // full {id,name,username,role,perms} for whoever is logged in
 
 async function api(url, options = {}) {
-    const token = localStorage.getItem('token');
+    // Keep the frontend and backend on one token key.
+    // setSession() stores the token as PIPELINE_CRM_token.
+    const token = localStorage.getItem('PIPELINE_CRM_token');
 
     const headers = {
         'Content-Type': 'application/json',
@@ -640,16 +642,25 @@ async function api(url, options = {}) {
         headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(url, {
+    // All backend routes are exposed under /api on Vercel.
+    // Existing callers can continue using api('/auth/login'), api('/leads'), etc.
+    const apiUrl = url.startsWith('/api/') ? url : `/api${url}`;
+
+    const response = await fetch(apiUrl, {
         ...options,
         headers
     });
 
-    const data = await response.json();
+    let data = {};
+    try {
+        data = await response.json();
+    } catch (_) {
+        // Keep a useful error even if the server returns an empty/non-JSON body.
+    }
 
     if (!response.ok) {
         throw new Error(
-            data.error || `Request failed (${response.status})`
+            data.error || data.message || `Request failed (${response.status})`
         );
     }
 
@@ -664,6 +675,7 @@ function clearSession(){
   authToken = null;
   STATE_CURRENT_USER = null;
   localStorage.removeItem('PIPELINE_CRM_token');
+  localStorage.removeItem('token');
 }
 
 async function loadAll(){
