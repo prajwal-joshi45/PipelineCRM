@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>Pipeline — Sales Tracker CRM</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2712%27 fill=%27%23132448%27/%3E%3Cpath d=%27M16 45V19h8v26h-8Zm12 0V27h8v18h-8Zm12 0V13h8v32h-8Z%27 fill=%27white%27/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -629,48 +630,63 @@ let authToken = localStorage.getItem('PIPELINE_CRM_token') || null;
 let STATE_CURRENT_USER = null; // full {id,name,username,role,perms} for whoever is logged in
 
 async function api(url, options = {}) {
-    // Keep the frontend and backend on one token key.
-    // setSession() stores the token as PIPELINE_CRM_token.
-    const token = localStorage.getItem('PIPELINE_CRM_token');
+  // Use the same token key that setSession() writes.
+  const token = localStorage.getItem('PIPELINE_CRM_token');
 
-    const headers = {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-    };
+  // All Express endpoints are mounted below /api on Vercel.
+  const apiUrl = url.startsWith('/api/')
+    ? url
+    : `/api${url.startsWith('/') ? url : '/' + url}`;
 
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(apiUrl, {
+    ...options,
+    headers
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  let data;
+
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    data = { error: text || `Request failed (${response.status})` };
+  }
+
+  if (!response.ok) {
+    // Do not keep sending a stale token after the server rejects it.
+    if (response.status === 401) {
+      authToken = null;
+      STATE_CURRENT_USER = null;
+      localStorage.removeItem('PIPELINE_CRM_token');
+      localStorage.removeItem('token');
     }
 
-    // All backend routes are exposed under /api on Vercel.
-    // Existing callers can continue using api('/auth/login'), api('/leads'), etc.
-    const apiUrl = url.startsWith('/api/') ? url : `/api${url}`;
+    throw new Error(
+      data.error || `Request failed (${response.status})`
+    );
+  }
 
-    const response = await fetch(apiUrl, {
-        ...options,
-        headers
-    });
-
-    let data = {};
-    try {
-        data = await response.json();
-    } catch (_) {
-        // Keep a useful error even if the server returns an empty/non-JSON body.
-    }
-
-    if (!response.ok) {
-        throw new Error(
-            data.error || data.message || `Request failed (${response.status})`
-        );
-    }
-
-    return data;
+  return data;
 }
+
 function setSession(token, user){
   authToken = token;
   STATE_CURRENT_USER = user;
   localStorage.setItem('PIPELINE_CRM_token', token);
+  // Remove the old key used by the previous frontend version.
+  localStorage.removeItem('token');
 }
+
 function clearSession(){
   authToken = null;
   STATE_CURRENT_USER = null;
@@ -2623,6 +2639,9 @@ function getDashFiltered(){
 
 let lossChart=null;
 function renderDash(){
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js is not loaded; dashboard charts will be skipped.');
+  }
   renderDashFilters();
   const {leads, activity} = getDashFiltered();
 
@@ -2769,7 +2788,7 @@ function renderDash(){
 
   if(lossChart) lossChart.destroy();
   const ctx = document.getElementById('lossChartEl');
-  if(ctx){
+  if(ctx && typeof Chart !== 'undefined'){
     lossChart = new Chart(ctx, {
       type:'doughnut',
       data:{ labels:LOSS_REASONS, datasets:[{ data:LOSS_REASONS.map(r=>lossData[r]), backgroundColor:['#FF6E79','#E8B33D','#8C9BF0','#1DBEB0','#DB8CEA','#9AA8CC'], borderColor:'#132548', borderWidth:2 }]},
@@ -2928,7 +2947,7 @@ async function renderLogin(){
       const username = document.getElementById('login_newUsername').value.trim().toLowerCase();
       const password = document.getElementById('login_newPassword').value;
       try{
-        const { token, user } = await api('/auth/setup', { method:'POST', body: JSON.stringify({ name, username, password }) });
+        const { token, user } = await api('/api/auth/setup', { method:'POST', body: JSON.stringify({ name, username, password }) });
         setSession(token, user);
         document.getElementById('loginBg').classList.remove('open');
         await loadAll();
@@ -2953,7 +2972,7 @@ async function renderLogin(){
   function doLogin(){
     const username = document.getElementById('login_username').value.trim().toLowerCase();
     const password = document.getElementById('login_password').value;
-    api('/auth/login', { method:'POST', body: JSON.stringify({ username, password }) })
+    api('/api/auth/login', { method:'POST', body: JSON.stringify({ username, password }) })
       .then(async ({ token, user })=>{
         setSession(token, user);
         document.getElementById('loginBg').classList.remove('open');
@@ -2980,7 +2999,7 @@ async function afterLogin(){
 document.getElementById('userBadgeBtn').addEventListener('click', async ()=>{
   if(currentUser()){
     if(!confirm(`Log out ${currentUser().name}?`)) return;
-    try{ await api('/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
+    try{ await api('/api/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
     clearSession();
     // A reload — not just re-showing the login modal on top of the existing
     // page — is what actually guarantees no lead/money data is left sitting
@@ -3203,7 +3222,7 @@ setInterval(async ()=>{
   const timeoutMin = (STATE.settings && STATE.settings.inactivityTimeoutMinutes) || 30;
   if(Date.now() - lastActivityAt > timeoutMin*60*1000){
     localStorage.setItem('PIPELINE_CRM_inactivity_logout','1');
-    try{ await api('/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
+    try{ await api('/api/auth/logout', { method:'POST' }); }catch(e){ /* ignore */ }
     clearSession();
     location.reload();
   }
